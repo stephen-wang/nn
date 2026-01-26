@@ -12,5 +12,7 @@ private:
 public:
     static MatrixFunc SigmoidDrevative;
     static MatrixFunc SigmoidFunc;
+    static MatrixFunc ReLUFunc;
+    static MatrixFunc ReLUDrevative;
     static NNMatrix softmax(const NNMatrix &matrix);
 };

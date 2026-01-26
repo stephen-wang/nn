@@ -66,7 +66,7 @@ NNMatrix NeuralNetwork::forward(int epic, int batchNo, const std::vector<NNMatri
         for (int i = 0; i < layers.size(); i++) {
         
             if (i < layers.size() - 1) {
-                input = layers[i].forward(input, NNFunctions::SigmoidFunc, false);
+                input = layers[i].forward(input, NNFunctions::ReLUFunc, false);
             } else {
                 input = layers[i].forward(input, nullptr);
                 input = NNFunctions::softmax(input);
@@ -110,14 +110,14 @@ void NeuralNetwork::backward(
         // hidden layers derivatives
         for (int l = layerSize - 2; l > 0; l--) {
             auto da = layers[l+1].calculatePrevLayerDA(dzs[l+1]);
-            dzs[l] = da.elementProduct(layerOutputs[l][i].applyFunction(NNFunctions::SigmoidDrevative));
+            dzs[l] = da.elementProduct(layerOutputs[l][i].applyFunction(NNFunctions::ReLUDrevative));
             dws[l] += calculateDW(layerOutputs[l-1][i], dzs[l]);
             dbs[l] += dzs[l];
         }
 
         // 1st hidden layer derivative
         auto da = layers[1].calculatePrevLayerDA(dzs[1]);
-        auto activeLayerOutput = layerOutputs[0][i].applyFunction(NNFunctions::SigmoidDrevative);
+        auto activeLayerOutput = layerOutputs[0][i].applyFunction(NNFunctions::ReLUDrevative);
         dzs[0] = da.elementProduct(activeLayerOutput);
         auto curDW = calculateDW(x, dzs[0]);
         dws[0] += curDW;

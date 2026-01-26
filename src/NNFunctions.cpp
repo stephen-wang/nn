@@ -13,6 +13,9 @@ MatrixFunc NNFunctions::SigmoidFunc = [](float x) {
 
 MatrixFunc NNFunctions::SigmoidDrevative = [](float y) { return y * (1 - y); };
 
+MatrixFunc NNFunctions::ReLUFunc = [](float x) { return x > 0.0f ? x : 0.0f; };
+MatrixFunc NNFunctions::ReLUDrevative = [](float y) { return y > 0.0f ? 1.0f : 0.0f; };
+
 NNMatrix NNFunctions::softmax(const NNMatrix &input) {
     NNMatrix ret(input.getRowSize(), 1);
     if (input.getColSize() != 1) {

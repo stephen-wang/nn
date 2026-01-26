@@ -24,13 +24,13 @@ NeuralNetwork::NeuralNetwork(const std::vector<int> &config) {
 void NeuralNetwork::train(std::vector<NNMatrixPtr>& X, std::vector<NNMatrixPtr>& Y, std::vector<NNMatrixPtr> &testX, std::vector<NNMatrixPtr> &testY, int epochNum, int batchSize, float learningRate, float momentum) {
     int e = 0;
     while (e < epochNum) {
-        LOG << "Epic " << e << std::endl;
+        LOG << "Epoc " << e << std::endl;
         NNUtils::shuffle(X, Y);
         int numBatches = (X.size() + 1) / batchSize;
         float epochLoss = 0.0f;
         for (int b = 0; b < numBatches; b++) {
             if (b % 200 == 0) {
-                LOG << "Epic " << e << ", batch " << b << " starts" << std::endl;
+                LOG << "Epoc " << e << ", batch " << b << " starts" << std::endl;
                 //layers[layers.size()-1].dump();
                  
             }
@@ -43,57 +43,37 @@ void NeuralNetwork::train(std::vector<NNMatrixPtr>& X, std::vector<NNMatrixPtr>&
 
         float avgLoss = epochLoss/ numBatches;
         float acc = accuracy(e, testX, testY);
-        std::cout << "Epic " << e+1 << "/"  << epochNum << ", loss " << avgLoss << ", acc " << std::setprecision(3) <<  acc * 100 << std::endl;
+        std::cout << "Epoc " << e+1 << "/"  << epochNum << ", loss " << avgLoss << ", acc " << std::setprecision(3) <<  acc * 100 << std::endl;
         e++;
+
+        if (avgLoss < 0.02) {
+            std::cout << "Achieve accurate target, traing is done!" << std::endl;
+            break;
+        }
     }
 }
 
 NNMatrix NeuralNetwork::forward(int epic, int batchNo, const std::vector<NNMatrixPtr> &X) {
-    //LOG << "Forward start" << std::endl;
     for (auto& batchOutpus : layerOutputs) {
         batchOutpus.clear();
     }
  
-    //static int cnt = 0;
-    //int batchSeq = -1;
     for (auto x: X) {
-        //batchSeq++;
         NNMatrix input(*x);
-        //LOG << "epic " << epic << ", batch " << batchNo << ", origin input " << std::endl;
-        //x->dump();
         for (int i = 0; i < layers.size(); i++) {
-            //if (cnt < 3) {
-             //LOG << "epic " << epic << ", batch " << batchNo << ", batchSeq " << batchSeq << ", layer " << i << " forward input" << std::endl;
-             //input.dump();
-            //}
-        
+    
             if (i < layers.size() - 1) {
-                // use sigmoid for hidden layers
-                // if (i == 1)
-                //     input = layers[i].forward(input, NNFunctions::SigmoidFunc, true);
-                // else 
-                    input = layers[i].forward(input, NNFunctions::SigmoidFunc, false);
+                input = layers[i].forward(input, NNFunctions::SigmoidFunc, false);
             } else {
                 // use softmax for output layer
                 input = layers[i].forward(input, nullptr);
                 input = NNFunctions::softmax(input);
             }
-            //if (cnt < 3) {
-                // LOG << "layer " << i << " forward output" << std::endl;
-                // input.dump();
-            //}
             layerOutputs[i].push_back(input);
         }
     }
 
-    //LOG << "Forward output: " << std::endl;
-    //LOG << "epic " << epic << ", batch " << batchNo << ", forward output: " << std::endl;
-    //layerOutputs[layers.size()-1][X.size()-1].dump();
-
     return layerOutputs[layers.size()-1][X.size()-1];
-
-    //cnt++;
-    //LOG << "Forward ended" << std::endl;    
 }
 
 void NeuralNetwork::backward(const std::vector<NNMatrixPtr> &X, const std::vector<NNMatrixPtr> &Y, float learningRate, float momentum) {
@@ -133,24 +113,11 @@ void NeuralNetwork::backward(const std::vector<NNMatrixPtr> &X, const std::vecto
 
         // 1st hidden layer derivative
         auto da = layers[1].calculatePrevLayerDA(dzs[1]);
-        //LOG << "layer " << 0 << ", dA size " << da.getRowSize() << "x" << da.getColSize() << std::endl;
-       
-        // layerOutputs[0][i].dump();
-        // LOG << "Dump activated layer 0 output for patch " << i << ": " << std::endl;
         auto activeLayerOutput = layerOutputs[0][i].applyFunction(NNFunctions::SigmoidDrevative);
         // activeLayerOutput.dump();
         dzs[0] = da.elementProduct(activeLayerOutput);
-        // LOG << "Dump layer 0 dz: " << std::endl;
-        // dzs[0].dump();
-        //LOG << "x size " << x.getRowSize() << "x" << x.getColSize() << std::endl;
-        // LOG << "Dump current input X: " << std::endl;
-        // x.dump();
         auto curDW = calculateDW(x, dzs[0]);
-        // LOG << "Dump layer 0 current DW for patch " << i << ": " << std::endl;
-        // curDW.dump(true);
         dws[0] += curDW;
-        // LOG << "Dump layer 0 DW for patch " << i << ": " << std::endl;
-        // dws[0].dump(true);
         dbs[0] += dzs[0];
     }
 
