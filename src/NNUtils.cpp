@@ -118,7 +118,7 @@ void NNUtils::shuffle(std::vector<NNMatrixPtr>& input, std::vector<NNMatrixPtr>&
     
     std::vector<std::pair<NNMatrixPtr, NNMatrixPtr>> combinedData;
     for (int i = 0; i < input.size(); i++) {
-    combinedData.push_back(std::make_pair(input[i], label[i]));
+      combinedData.push_back(std::make_pair(input[i], label[i]));
     }
     std::shuffle(combinedData.begin(), combinedData.end(), gen);
     

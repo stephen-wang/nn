@@ -1,5 +1,5 @@
 #include "NNMatrixTest.h"
-
+#include "NNUtilsTest.h"
 
 int main(int argc, char **argv) 
 {
