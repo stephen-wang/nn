@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
 
   std::vector<int> cfg{INPUT_SIZE, HIDDEN1_SIZE, HIDDEN2_SIZE, OUTPUT_SIZE};
   auto nn = NeuralNetwork(cfg);
-  nn.train(inputs, labels, testInputs, testLabels, EPOCHS, BATCH_SIZE, LEARNING_RATE, MOMENTUM);
+  nn.train(inputs, labels, testInputs, testLabels, EPOCHS, BATCH_SIZE, LEARNING_RATE, MOMENTUM, nullptr, nullptr, nullptr, nullptr);
 
   return 0;
 }

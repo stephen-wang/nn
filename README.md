@@ -42,21 +42,6 @@ make nn_test
 ./nn_test
 ```
 
-## Coverage
-
-Coverage uses gcovr. Install it first (e.g. `pipx install gcovr` or `pip install gcovr`).
-
-```zsh
-make coverage
-```
-
-For an HTML report:
-
-```zsh
-make coverage_html
-open coverage/index.html
-```
-
 ### Troubleshooting tests
 
 - The `Makefile` expects GoogleTest in `/opt/homebrew/Cellar/googletest/1.17.0/`.

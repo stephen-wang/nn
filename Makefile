@@ -1,4 +1,6 @@
 CXX = g++
+GLFW_LIB_INC = /opt/homebrew/Cellar/glfw/3.4/include
+GLFW_LIB = /opt/homebrew/Cellar/glfw/3.4/lib
 GTEST_VERSION = 1.17.0
 GTEST_LIB_PATH = /opt/homebrew/Cellar/googletest/$(GTEST_VERSION)/lib
 GETST_LIB_INC = /opt/homebrew/Cellar/googletest/$(GTEST_VERSION)/include
@@ -11,7 +13,20 @@ TESTFLAGS =  -I$(GETST_LIB_INC) -L$(GTEST_LIB_PATH) $(GTEST_LIBS) -pthread
 TARGET = main
 TEST_TARGET = nn_test
 COVERAGE_TARGET = nn_test_cov
+GUI_TARGET = nn_gui
 SRC_FILES = $(wildcard $(SRC_DIR)/*.cpp)
+MAIN_SRCS = $(filter-out $(SRC_DIR)/gui_main.cpp,$(SRC_FILES))
+GUI_SRCS = $(filter-out $(SRC_DIR)/main.cpp,$(SRC_FILES))
+IMGUI_DIR = third_party/imgui
+IMGUI_BACKENDS = $(IMGUI_DIR)/backends
+IMGUI_SRCS = \
+	$(IMGUI_DIR)/imgui.cpp \
+	$(IMGUI_DIR)/imgui_draw.cpp \
+	$(IMGUI_DIR)/imgui_tables.cpp \
+	$(IMGUI_DIR)/imgui_widgets.cpp \
+	$(IMGUI_BACKENDS)/imgui_impl_glfw.cpp \
+	$(IMGUI_BACKENDS)/imgui_impl_opengl3.cpp
+GUI_LIBS = -L$(GLFW_LIB) -lglfw -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
 COVERAGE_FLAGS = -O0 --coverage
 COVERAGE_TESTFLAGS = $(TESTFLAGS)
 COV_OBJ_DIR = build/coverage
@@ -19,10 +34,13 @@ COV_OBJ_DIR = build/coverage
 #all: (TARGET $(TEST_TARGET) clean
 all: $(TARGET) clean
 
-$(TARGET): $(SRC_DIR)/*.cpp
+$(TARGET): $(MAIN_SRCS)
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
-NON_MAIN_SRCS = $(filter-out $(SRC_DIR)/main.cpp,$(SRC_FILES))
+$(GUI_TARGET): $(GUI_SRCS) $(IMGUI_SRCS) 
+	$(CXX) $(CXXFLAGS) -I$(GLFW_LIB_INC) -I$(IMGUI_DIR) -I$(IMGUI_BACKENDS) $(GUI_LIBS) -o $@ $^ 
+
+NON_MAIN_SRCS = $(filter-out $(SRC_DIR)/main.cpp $(SRC_DIR)/gui_main.cpp,$(SRC_FILES))
 COV_SRCS = $(NON_MAIN_SRCS)
 COV_TEST_SRCS = $(wildcard $(TEST_DIR)/*.cpp)
 COV_OBJS = $(patsubst $(SRC_DIR)/%.cpp,$(COV_OBJ_DIR)/%.o,$(COV_SRCS))
