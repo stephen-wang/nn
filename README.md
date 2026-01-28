@@ -20,6 +20,34 @@ make
 
 This produces `./main`.
 
+## GUI (nn_gui)
+
+The GUI target visualizes training progress and the network topology.
+
+### Dependencies
+
+- GLFW (Homebrew path assumed in the Makefile)
+- OpenGL (macOS frameworks)
+- ImGui (vendored in `third_party/imgui`)
+
+### Build
+
+```zsh
+make nn_gui
+```
+
+You can also print the build details from the Makefile:
+
+```zsh
+make nn_gui_info
+```
+
+### Run
+
+```zsh
+./nn_gui
+```
+
 ## Run
 
 ```zsh

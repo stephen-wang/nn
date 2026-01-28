@@ -27,6 +27,8 @@ IMGUI_SRCS = \
 	$(IMGUI_BACKENDS)/imgui_impl_glfw.cpp \
 	$(IMGUI_BACKENDS)/imgui_impl_opengl3.cpp
 GUI_LIBS = -L$(GLFW_LIB) -lglfw -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
+GUI_DEPS = glfw imgui opengl
+GUI_BUILD_CMD = $(CXX) $(CXXFLAGS) -I$(GLFW_LIB_INC) -I$(IMGUI_DIR) -I$(IMGUI_BACKENDS) $(GUI_LIBS) -o $(GUI_TARGET) $(GUI_SRCS) $(IMGUI_SRCS)
 COVERAGE_FLAGS = -O0 --coverage
 COVERAGE_TESTFLAGS = $(TESTFLAGS)
 COV_OBJ_DIR = build/coverage
@@ -39,6 +41,14 @@ $(TARGET): $(MAIN_SRCS)
 
 $(GUI_TARGET): $(GUI_SRCS) $(IMGUI_SRCS) 
 	$(CXX) $(CXXFLAGS) -I$(GLFW_LIB_INC) -I$(IMGUI_DIR) -I$(IMGUI_BACKENDS) $(GUI_LIBS) -o $@ $^ 
+
+nn_gui_info:
+	@echo "Target: $(GUI_TARGET)"
+	@echo "Dependencies: $(GUI_DEPS)"
+	@echo "GLFW include: $(GLFW_LIB_INC)"
+	@echo "GLFW lib: $(GLFW_LIB)"
+	@echo "ImGui dir: $(IMGUI_DIR)"
+	@echo "Build command: $(GUI_BUILD_CMD)"
 
 NON_MAIN_SRCS = $(filter-out $(SRC_DIR)/main.cpp $(SRC_DIR)/gui_main.cpp,$(SRC_FILES))
 COV_SRCS = $(NON_MAIN_SRCS)
@@ -76,3 +86,5 @@ clean_all:
 	rm -rf *.o $(TEST_TARGET) $(TARGET) *dSYM
 clean_coverage:
 	rm -rf *.gcda *.gcno coverage $(COV_OBJ_DIR)
+
+.PHONY: nn_gui_info
