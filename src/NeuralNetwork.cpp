@@ -36,7 +36,8 @@ void NeuralNetwork::train(
     TrainCallback callback,
     LayerCallback layerCallback,
     BatchCallback batchCallback,
-    StopCallback stopCallback)
+    StopCallback stopCallback,
+    BatchStatsCallback batchStatsCallback)
 {
     int e = 0;
     while (e < epochNum)
@@ -66,7 +67,28 @@ void NeuralNetwork::train(
             {
                 batchCallback(e, b, *batchX[0], layerOutputs.back()[0]);
             }
-            epochLoss += loss(batchY);
+
+            float batchLoss = loss(batchY);
+            epochLoss += batchLoss;
+
+            if (batchStatsCallback)
+            {
+                int correct = 0;
+                const auto &predOutputs = layerOutputs[layers.size() - 1];
+                const int batchCount = static_cast<int>(batchY.size());
+                for (int i = 0; i < batchCount; ++i)
+                {
+                    if (argmax(predOutputs[i]) == argmax(*batchY[i]))
+                    {
+                        correct += 1;
+                    }
+                }
+                const float batchAcc = batchCount > 0 ? (static_cast<float>(correct) / static_cast<float>(batchCount)) : 0.0f;
+                const float epochAvgLoss = (b + 1) > 0 ? (epochLoss / static_cast<float>(b + 1)) : 0.0f;
+                // Publish 1-based epoch/batch numbers for UI display.
+                batchStatsCallback(e + 1, epochNum, b + 1, numBatches, batchLoss, epochAvgLoss, batchAcc);
+            }
+
             backward(batchX, batchY, learningRate, momentum, e, b, layerCallback);
             if (layerCallback)
             {

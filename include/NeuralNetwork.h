@@ -14,6 +14,7 @@ public:
     NeuralNetwork(const std::vector<int> &config);
     using TrainCallback = std::function<void(int epoch, int totalEpochs, float loss, float accuracy)>;
     using BatchCallback = std::function<void(int epoch, int batch, const NNMatrix &input, const NNMatrix &output)>;
+    using BatchStatsCallback = std::function<void(int epoch, int totalEpochs, int batch, int totalBatches, float batchLoss, float epochLoss, float batchAccuracy)>;
     using StopCallback = std::function<bool()>;
     enum class LayerPhase
     {
@@ -22,7 +23,7 @@ public:
         Backward = 2
     };
     using LayerCallback = std::function<void(int epoch, int batch, int layerIndex, LayerPhase phase)>;
-    void train(std::vector<NNMatrixPtr> &X, std::vector<NNMatrixPtr> &Y, std::vector<NNMatrixPtr> &testX, std::vector<NNMatrixPtr> &testY, int epochNum, int batchSize, float learningRate, float momentum, TrainCallback callback = nullptr, LayerCallback layerCallback = nullptr, BatchCallback batchCallback = nullptr, StopCallback stopCallback = nullptr);
+    void train(std::vector<NNMatrixPtr> &X, std::vector<NNMatrixPtr> &Y, std::vector<NNMatrixPtr> &testX, std::vector<NNMatrixPtr> &testY, int epochNum, int batchSize, float learningRate, float momentum, TrainCallback callback = nullptr, LayerCallback layerCallback = nullptr, BatchCallback batchCallback = nullptr, StopCallback stopCallback = nullptr, BatchStatsCallback batchStatsCallback = nullptr);
 
 private:
     NNMatrix forward(int epic, int batchNo, const std::vector<NNMatrixPtr> &X, LayerCallback layerCallback);

@@ -41,6 +41,12 @@ struct TrainingStats
     std::vector<float> acc;
     std::mutex mutex;
     std::atomic<int> currentEpoch{0};
+    std::atomic<int> currentBatch{-1};
+    std::atomic<int> totalBatches{0};
+    std::atomic<float> batchLoss{NAN};
+    std::atomic<float> epochLoss{NAN};
+    std::atomic<float> batchAccuracy{NAN};
+    std::atomic<float> epochAccuracy{NAN};
     std::atomic<bool> done{false};
     std::atomic<int> activeLayer{-1};
     std::atomic<int> activePhase{0};
@@ -102,6 +108,8 @@ static void startTraining(TrainingStats &stats)
         stats.loss.push_back(loss);
         stats.acc.push_back(accuracy * 100.0f);
         stats.currentEpoch.store(epoch);
+        stats.epochLoss.store(loss);
+        stats.epochAccuracy.store(accuracy);
         if (epoch >= totalEpochs)
         {
             stats.done.store(true);
@@ -130,12 +138,38 @@ static void startTraining(TrainingStats &stats)
         }
     };
 
+    NeuralNetwork::BatchStatsCallback batchStatsCallback = [&](int epoch, int totalEpochs, int batch, int totalBatches, float batchLoss, float epochLoss, float batchAccuracy)
+    {
+        (void)totalEpochs;
+        const int prevEpoch = stats.currentEpoch.load();
+        if (epoch != prevEpoch)
+        {
+            stats.epochAccuracy.store(NAN);
+        }
+        stats.currentEpoch.store(epoch);
+        stats.currentBatch.store(batch);
+        stats.totalBatches.store(totalBatches);
+        stats.batchLoss.store(batchLoss);
+        stats.epochLoss.store(epochLoss);
+        stats.batchAccuracy.store(batchAccuracy);
+
+        // Provide an in-epoch running accuracy so the UI doesn't show "..." for Epoc Accuracy.
+        // This will be overwritten by the end-of-epoch TrainCallback (test accuracy).
+        const float prevEpochAcc = stats.epochAccuracy.load();
+        float runningEpochAcc = batchAccuracy;
+        if (batch > 1 && std::isfinite(prevEpochAcc))
+        {
+            runningEpochAcc = (prevEpochAcc * static_cast<float>(batch - 1) + batchAccuracy) / static_cast<float>(batch);
+        }
+        stats.epochAccuracy.store(runningEpochAcc);
+    };
+
     NeuralNetwork::StopCallback stopCallback = [&]()
     {
         return stats.stop.load();
     };
 
-    nn.train(inputs, labels, testInputs, testLabels, EPOCHS, BATCH_SIZE, LEARNING_RATE, MOMENTUM, callback, layerCallback, batchCallback, stopCallback);
+    nn.train(inputs, labels, testInputs, testLabels, EPOCHS, BATCH_SIZE, LEARNING_RATE, MOMENTUM, callback, layerCallback, batchCallback, stopCallback, batchStatsCallback);
     stats.activeLayer.store(-1);
     stats.activePhase.store(static_cast<int>(NeuralNetwork::LayerPhase::Idle));
     stats.done.store(true);
@@ -209,22 +243,21 @@ static void drawDnnTopology(ImDrawList *drawList, const ImVec2 &origin, const Im
     };
 
     const std::array<LayerConfig, 4> layers = {
-        LayerConfig{16, IM_COL32(120, 200, 255, 255), IM_COL32(180, 220, 255, 255), "Input", INPUT_SIZE},
-        LayerConfig{10, IM_COL32(140, 255, 180, 255), IM_COL32(190, 255, 210, 255), "Hidden 1", HIDDEN1_SIZE},
-        LayerConfig{8, IM_COL32(255, 210, 120, 255), IM_COL32(255, 230, 180, 255), "Hidden 2", HIDDEN2_SIZE},
-        LayerConfig{4, IM_COL32(255, 140, 140, 255), IM_COL32(255, 190, 190, 255), "Output", OUTPUT_SIZE}};
+        LayerConfig{24, IM_COL32(120, 200, 255, 255), IM_COL32(180, 220, 255, 255), "Input layer", INPUT_SIZE},
+        LayerConfig{18, IM_COL32(140, 255, 180, 255), IM_COL32(190, 255, 210, 255), "Hidden layer 1", HIDDEN1_SIZE},
+        LayerConfig{12, IM_COL32(255, 210, 120, 255), IM_COL32(255, 230, 180, 255), "Hidden layer 2", HIDDEN2_SIZE},
+        LayerConfig{8, IM_COL32(255, 140, 140, 255), IM_COL32(255, 190, 190, 255), "Output layer", OUTPUT_SIZE}};
 
     const float leftPadding = 40.0f;
     const float rightPadding = 40.0f;
     const float topPadding = 40.0f;
     const float bottomPadding = 40.0f;
-    const float nodeRadius = 8.0f;
-    const float nodeBorder = 2.0f;
-    const float suspRadius = 3.0f;
-    const float suspOffset = 14.0f;
-    const float labelOffset = 32.0f;
-    const float ellipsisSpacing = 9.0f;
-    const float ellipsisRadius = 3.0f;
+    const float nodeRadius = 4.0f;
+    const float nodeBorder = 1.0f;
+    const float suspRadius = 1.5f;
+    const float suspOffset = 7.0f;
+    const float ellipsisSpacing = 4.5f;
+    const float ellipsisRadius = 1.5f;
 
     const float usableW = size.x - leftPadding - rightPadding;
     const float usableH = size.y - topPadding - bottomPadding;
@@ -294,18 +327,43 @@ static void drawDnnTopology(ImDrawList *drawList, const ImVec2 &origin, const Im
         layerPositions.emplace_back(std::move(positions));
         layouts.push_back({x, layerTop, layerHeight});
 
-        char label[64];
-        std::snprintf(label, sizeof(label), "%s (%d)", layers[i].name, layers[i].count);
-        char rowsLabel[64];
-        std::snprintf(rowsLabel, sizeof(rowsLabel), "W rows: %d", layers[i].weightRows);
+        int inputSize = 0;
+        int outputSize = 0;
+        if (i == 0)
+        {
+            // Input layer represents the input vector shape: (INPUT_SIZE x 1)
+            inputSize = layers[i].weightRows;
+            outputSize = 1;
+        }
+        else
+        {
+            inputSize = layers[i - 1].weightRows;
+            outputSize = layers[i].weightRows;
+        }
+
+        char label[96];
+        std::snprintf(label, sizeof(label), "%s (%d x %d)", layers[i].name, inputSize, outputSize);
 
         ImVec2 textSize = ImGui::CalcTextSize(label);
-        ImVec2 rowsSize = ImGui::CalcTextSize(rowsLabel);
-        float labelY = origin.y + topPadding - labelOffset - fontSize * 2.0f;
-        ImVec2 textPos(x - textSize.x * 0.5f, labelY);
-        ImVec2 rowsPos(x - rowsSize.x * 0.5f, labelY + fontSize + 2.0f);
-        drawList->AddText(font, fontSize, textPos, IM_COL32(230, 230, 240, 255), label);
-        drawList->AddText(font, fontSize, rowsPos, IM_COL32(200, 200, 210, 255), rowsLabel);
+        // Draw label inside the canvas. Clamp X and auto-shrink font size to avoid clipping on narrow windows.
+        const float labelY = origin.y + 6.0f;
+        const float minX = origin.x + 2.0f;
+        const float maxX = origin.x + size.x - 2.0f;
+        const float maxLabelW = std::max(0.0f, (maxX - minX));
+
+        float labelFontSize = fontSize;
+        float scale = 1.0f;
+        if (textSize.x > 0.0f && textSize.x > maxLabelW)
+        {
+            scale = maxLabelW / textSize.x;
+            labelFontSize = fontSize * scale;
+        }
+        ImVec2 scaledTextSize(textSize.x * scale, textSize.y * scale);
+
+        float textX = x - scaledTextSize.x * 0.5f;
+        textX = std::clamp(textX, minX, std::max(minX, maxX - scaledTextSize.x));
+        ImVec2 textPos(textX, labelY);
+        drawList->AddText(font, labelFontSize, textPos, IM_COL32(230, 230, 240, 255), label);
     }
 
     const ImU32 linkColorDim = IM_COL32(60, 60, 70, 120);
@@ -394,10 +452,16 @@ int main(int argc, char **argv)
         ImGui::Begin("NN Dashboard", nullptr, mainFlags);
 
         ImVec2 content = ImGui::GetContentRegionAvail();
-        float topHeight = content.y * 0.25f;
-        if (topHeight < 240.0f)
+        // Give the bottom "Network Topology" view more vertical space.
+        float topHeight = content.y * 0.20f;
+        if (topHeight < 220.0f)
         {
-            topHeight = 240.0f;
+            topHeight = 220.0f;
+        }
+        // Ensure the bottom pane always has some room.
+        if (topHeight > content.y - 220.0f)
+        {
+            topHeight = std::max(0.0f, content.y - 220.0f);
         }
 
         ImGui::BeginChild("TrainingTop", ImVec2(0.0f, topHeight), false);
@@ -406,30 +470,76 @@ int main(int argc, char **argv)
         float colW = (totalW - spacing * 2.0f) / 3.0f;
 
         ImGui::BeginChild("TrainingLeft", ImVec2(colW, 0.0f), true);
-        int epoch = stats.currentEpoch.load();
-        ImGui::Text("Epoch: %d / %d", epoch, EPOCHS);
-        ImGui::Text("Status: %s", stats.done.load() ? "Completed" : "Training...");
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 210, 120, 255));
+        ImGui::SetWindowFontScale(1.6f);
+        ImGui::Text("Progress");
+        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
 
+        const int epoch = stats.currentEpoch.load();
+        const int batch = stats.currentBatch.load();
+        const int totalBatches = stats.totalBatches.load();
+        const float batchLoss = stats.batchLoss.load();
+        const float epochLoss = stats.epochLoss.load();
+        const float batchAcc = stats.batchAccuracy.load();
+        const float epochAcc = stats.epochAccuracy.load();
+
+        if (epoch > 0)
         {
-            std::lock_guard<std::mutex> lock(stats.mutex);
-            if (!stats.loss.empty())
-            {
-                ImGui::PlotLines("Loss", stats.loss.data(), static_cast<int>(stats.loss.size()), 0, nullptr, 0.0f, FLT_MAX, ImVec2(0, 120));
-            }
-            else
-            {
-                ImGui::Text("Loss: waiting for data...");
-            }
-
-            if (!stats.acc.empty())
-            {
-                ImGui::PlotLines("Accuracy (%)", stats.acc.data(), static_cast<int>(stats.acc.size()), 0, nullptr, 0.0f, 100.0f, ImVec2(0, 120));
-            }
-            else
-            {
-                ImGui::Text("Accuracy: waiting for data...");
-            }
+            ImGui::Text("Epoch: %d/%d", epoch, EPOCHS);
         }
+        else
+        {
+            ImGui::Text("Epoch: .../%d", EPOCHS);
+        }
+
+        if (batch > 0 && totalBatches > 0)
+        {
+            ImGui::Text("Batch: %d/%d", batch, totalBatches);
+        }
+        else
+        {
+            ImGui::Text("Batch: .../...");
+        }
+
+        if (std::isfinite(batchLoss))
+        {
+            ImGui::Text("Batch Loss: %.6f", batchLoss);
+        }
+        else
+        {
+            ImGui::Text("Batch Loss: ...");
+        }
+
+        if (std::isfinite(epochLoss))
+        {
+            ImGui::Text("Epoc Loss: %.6f", epochLoss);
+        }
+        else
+        {
+            ImGui::Text("Epoc Loss: ...");
+        }
+
+        if (std::isfinite(batchAcc))
+        {
+            ImGui::Text("Batch Accuracy: %.2f%%", batchAcc * 100.0f);
+        }
+        else
+        {
+            ImGui::Text("Batch Accuracy: ...");
+        }
+
+        if (std::isfinite(epochAcc))
+        {
+            ImGui::Text("Epoc Accuracy: %.2f%%", epochAcc * 100.0f);
+        }
+        else
+        {
+            ImGui::Text("Epoc Accuracy: ...");
+        }
+
+        ImGui::Text("Status: %s", stats.done.load() ? "Done" : "Training");
         ImGui::EndChild();
 
         ImGui::SameLine();
