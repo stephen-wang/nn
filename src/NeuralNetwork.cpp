@@ -98,7 +98,7 @@ void NeuralNetwork::train(
 
         float avgLoss = epochLoss / numBatches;
         float acc = accuracy(e, testX, testY);
-        std::cout << "Epic " << e + 1 << "/" << epochNum << ", loss " << avgLoss << ", acc " << std::setprecision(3) << acc * 100 << std::endl;
+        LOG << "Epic " << e + 1 << "/" << epochNum << ", loss " << avgLoss << ", acc " << std::setprecision(3) << acc * 100;
         if (callback)
         {
             callback(e + 1, epochNum, avgLoss, acc);

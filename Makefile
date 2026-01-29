@@ -8,7 +8,7 @@ GTEST_LIBS = -lgtest -lgtest_main
 TEST_DIR = test
 SRC_DIR = src
 INC_DIR = include
-CXXFLAGS = -std=c++17 -Wall -g -I$(INC_DIR)
+CXXFLAGS = -std=c++17 -Wall -g -I$(INC_DIR) -Ithird_party
 TESTFLAGS =  -I$(GETST_LIB_INC) -L$(GTEST_LIB_PATH) $(GTEST_LIBS) -pthread
 TARGET = main
 TEST_TARGET = nn_test

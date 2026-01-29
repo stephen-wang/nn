@@ -83,19 +83,19 @@ static GLFWwindow *initWindow()
 
 static void startTraining(TrainingStats &stats)
 {
-    std::cout << "Read train data from " << MNIST_TRAIN_DATA_FILE << std::endl;
+    NNLOG_INFO("nn_gui") << "Read train data from " << MNIST_TRAIN_DATA_FILE;
     auto inputs = NNUtils::read_mnist_data(MNIST_TRAIN_DATA_FILE);
     NNUtils::normalizeMnistData(inputs);
 
-    std::cout << "Read train label from " << MNIST_TRAIN_LABEL_FILE << std::endl;
+    NNLOG_INFO("nn_gui") << "Read train label from " << MNIST_TRAIN_LABEL_FILE;
     auto labels = NNUtils::read_mnist_labels(MNIST_TRAIN_LABEL_FILE);
     NNUtils::normalizeMnistLabel(labels);
 
-    std::cout << "Read test data from " << MNISt_TEST_DATA_FILE << std::endl;
+    NNLOG_INFO("nn_gui") << "Read test data from " << MNISt_TEST_DATA_FILE;
     auto testInputs = NNUtils::read_mnist_data(MNISt_TEST_DATA_FILE);
     NNUtils::normalizeMnistData(testInputs);
 
-    std::cout << "Read test label from " << MNIST_TEST_LABEL_FILE << std::endl;
+    NNLOG_INFO("nn_gui") << "Read test label from " << MNIST_TEST_LABEL_FILE;
     auto testLabels = NNUtils::read_mnist_labels(MNIST_TEST_LABEL_FILE);
     NNUtils::normalizeMnistLabel(testLabels);
 
