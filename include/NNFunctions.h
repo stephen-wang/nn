@@ -1,18 +1,17 @@
 #pragma once
 
-#include <string>
 #include "NNMatrix.h"
 
-typedef std::function<float(float)> MatrixFunc;
+#include <string>
 
 class NNFunctions {
-private:
+  private:
     static const std::string TAG;
 
-public:
+  public:
     static MatrixFunc SigmoidDrevative;
     static MatrixFunc SigmoidFunc;
     static MatrixFunc ReLUFunc;
     static MatrixFunc ReLUDrevative;
-    static NNMatrix softmax(const NNMatrix &matrix);
+    static NNMatrix softmax(const NNMatrix& matrix);
 };

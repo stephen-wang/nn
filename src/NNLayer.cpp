@@ -1,10 +1,11 @@
 #include "NNLayer.h"
-#include <sstream>
+
 #include <iomanip>
+#include <sstream>
 
 NNLayer::NNLayer(int inputSize, int outputSize)
-    : weight(outputSize, inputSize), vWeight(outputSize, inputSize), bias(outputSize, 1), vBias(outputSize, 1), dz_(outputSize, 1)
-{
+    : weight(outputSize, inputSize), vWeight(outputSize, inputSize), bias(outputSize, 1),
+      vBias(outputSize, 1), dz_(outputSize, 1) {
     for (int i = 0; i < outputSize; i++) {
         for (int j = 0; j < inputSize; j++) {
             weight.set(i, j, NNUtils::xavierInit(inputSize, outputSize));
@@ -12,10 +13,9 @@ NNLayer::NNLayer(int inputSize, int outputSize)
 
         bias.set(i, 0, NNUtils::xavierInit(inputSize, outputSize));
     }
-
 }
 
-NNMatrix NNLayer::forward(const NNMatrix &input, MatrixFunc activateFunc, bool debug) {
+NNMatrix NNLayer::forward(const NNMatrix& input, MatrixFunc activateFunc, bool debug) {
     auto ret = weight.dotProduct(input);
     if (debug) {
         LOG << "weight: " << std::endl;
@@ -41,7 +41,7 @@ NNMatrix NNLayer::forward(const NNMatrix &input, MatrixFunc activateFunc, bool d
     return ret;
 }
 
-NNMatrix NNLayer::calculatePrevLayerDA(const NNMatrix &dz) {
+NNMatrix NNLayer::calculatePrevLayerDA(const NNMatrix& dz) {
     NNMatrix da(weight.getColSize(), 1);
     for (int i = 0; i < da.getRowSize(); i++) {
         float daElemValue = 0.0f;
@@ -54,7 +54,7 @@ NNMatrix NNLayer::calculatePrevLayerDA(const NNMatrix &dz) {
     return da;
 }
 
-void NNLayer::update(const NNMatrix &dw, const NNMatrix &db, float alpha, float momentum) {
+void NNLayer::update(const NNMatrix& dw, const NNMatrix& db, float alpha, float momentum) {
     for (int i = 0; i < weight.getRowSize(); i++) {
         for (int j = 0; j < weight.getColSize(); j++) {
             auto delta = momentum * vWeight.get(i, j) + alpha * dw.get(i, j);

@@ -1,5 +1,6 @@
-#include "gtest/gtest.h"
 #include "../include/NNUtils.h"
+
+#include "gtest/gtest.h"
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -125,13 +126,13 @@ TEST(NNUtilsTest, ShuffleSingleElement) {
     ASSERT_FLOAT_EQ(1.0f, labels[0]->get(0, 0));
 }
 
-static void write_be32(std::ofstream &ofs, std::uint32_t value) {
+static void write_be32(std::ofstream& ofs, std::uint32_t value) {
     unsigned char bytes[4];
     bytes[0] = static_cast<unsigned char>((value >> 24) & 0xFF);
     bytes[1] = static_cast<unsigned char>((value >> 16) & 0xFF);
     bytes[2] = static_cast<unsigned char>((value >> 8) & 0xFF);
     bytes[3] = static_cast<unsigned char>(value & 0xFF);
-    ofs.write(reinterpret_cast<char *>(bytes), 4);
+    ofs.write(reinterpret_cast<char*>(bytes), 4);
 }
 
 TEST(NNUtilsTest, ReadMnistData) {
@@ -147,7 +148,7 @@ TEST(NNUtilsTest, ReadMnistData) {
         write_be32(ofs, 2);    // cols
 
         unsigned char pixels[4] = {0, 128, 255, 64};
-        ofs.write(reinterpret_cast<char *>(pixels), 4);
+        ofs.write(reinterpret_cast<char*>(pixels), 4);
     }
 
     auto images = NNUtils::read_mnist_data(tempPath.string());
@@ -175,7 +176,7 @@ TEST(NNUtilsTest, ReadMnistLabels) {
         write_be32(ofs, 2);    // numLabels
 
         unsigned char labels[2] = {3, 7};
-        ofs.write(reinterpret_cast<char *>(labels), 2);
+        ofs.write(reinterpret_cast<char*>(labels), 2);
     }
 
     auto labels = NNUtils::read_mnist_labels(tempPath.string());
@@ -206,7 +207,7 @@ TEST(NNUtilsTest, ReadMnistDataInvalidMagic) {
         write_be32(ofs, 2);    // cols
 
         unsigned char pixels[4] = {0, 1, 2, 3};
-        ofs.write(reinterpret_cast<char *>(pixels), 4);
+        ofs.write(reinterpret_cast<char*>(pixels), 4);
     }
 
     EXPECT_THROW(NNUtils::read_mnist_data(tempPath.string()), std::runtime_error);
@@ -226,7 +227,7 @@ TEST(NNUtilsTest, ReadMnistLabelsInvalidMagic) {
         write_be32(ofs, 1);    // numLabels
 
         unsigned char label = 1;
-        ofs.write(reinterpret_cast<char *>(&label), 1);
+        ofs.write(reinterpret_cast<char*>(&label), 1);
     }
 
     EXPECT_THROW(NNUtils::read_mnist_labels(tempPath.string()), std::runtime_error);

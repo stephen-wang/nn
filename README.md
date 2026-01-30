@@ -75,6 +75,35 @@ make nn_test
 - The `Makefile` expects GoogleTest in `/opt/homebrew/Cellar/googletest/1.17.0/`.
 - If your version differs, update `GTEST_VERSION` or override paths in the `Makefile`.
 
+## Lint / Format
+
+Recommended baseline:
+
+- `clang-format` for consistent formatting
+- `clang-tidy` for static analysis (readability/bugprone/performance)
+
+This repo includes configs:
+
+- `.clang-format`
+- `.clang-tidy`
+
+### Run locally
+
+```zsh
+make lint
+```
+
+Targets are also available individually:
+
+```zsh
+make format-check
+make tidy
+```
+
+### CI
+
+GitHub Actions workflow: `.github/workflows/lint.yml`
+
 ## Notes
 
 - Inputs are normalized to `[0, 1]` in `NNUtils::normalizeMnistData`.

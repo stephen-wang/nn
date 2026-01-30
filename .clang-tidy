@@ -1,0 +1,24 @@
+---
+Checks: >
+  -*,
+  bugprone-*,
+  performance-*,
+  modernize-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-narrowing-conversions,
+  -performance-avoid-endl,
+  -performance-for-range-copy,
+  -performance-inefficient-vector-operation,
+  -performance-unnecessary-copy-initialization,
+  -performance-unnecessary-value-param,
+  -modernize-deprecated-headers,
+  -modernize-loop-convert,
+  -modernize-use-emplace,
+  -modernize-use-trailing-return-type,
+  -modernize-use-nodiscard
+WarningsAsErrors: ''
+HeaderFilterRegex: '^(include|src)/'
+FormatStyle: file
+...
