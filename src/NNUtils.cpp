@@ -1,4 +1,8 @@
 #include "NNUtils.h"
+#include <algorithm>
+#include <cassert>
+#include <chrono>
+#include <cmath>
 #include <random>
 #include <fstream>
 
@@ -152,12 +156,21 @@ std::vector<NNMatrixPtr> NNUtils::getBatch(std::vector<NNMatrixPtr> &input, int 
 {
   std::vector<NNMatrixPtr> ret;
 
-  int start = batchNo * batchSize;
-  int end = std::min(start + batchSize, (int)input.size());
-  for (int i = start; i < end; i++)
+  if (batchSize <= 0)
   {
-    ret.push_back(input[i]);
+    return ret;
   }
+
+  const int total = static_cast<int>(input.size());
+  const int start = batchNo * batchSize;
+  if (start < 0 || start >= total)
+  {
+    return ret;
+  }
+
+  const int end = std::min(start + batchSize, total);
+  ret.reserve(static_cast<size_t>(end - start));
+  ret.insert(ret.end(), input.begin() + start, input.begin() + end);
 
   return ret;
 }
