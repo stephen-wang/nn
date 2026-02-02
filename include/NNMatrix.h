@@ -45,3 +45,4 @@ class NNMatrix : public std::enable_shared_from_this<NNMatrix> {
 };
 
 using NNMatrixPtr = std::shared_ptr<NNMatrix>;
+using NNMatrixPtrVector = std::vector<NNMatrixPtr>;

@@ -23,10 +23,8 @@ NeuralNetwork::NeuralNetwork(const std::vector<int>& config) {
     layerOutputs = std::vector<std::vector<NNMatrix>>(configSize - 1, std::vector<NNMatrix>());
 }
 
-void NeuralNetwork::train(std::vector<NNMatrixPtr>& X, std::vector<NNMatrixPtr>& Y,
-                          std::vector<NNMatrixPtr>& testX, std::vector<NNMatrixPtr>& testY,
-                          int epochNum, int batchSize, float learningRate, float momentum,
-                          TrainCallback callback, LayerCallback layerCallback,
+void NeuralNetwork::train(NNDataSet& dataSet, int epochNum, int batchSize, float learningRate,
+                          float momentum, TrainCallback callback, LayerCallback layerCallback,
                           BatchCallback batchCallback, StopCallback stopCallback,
                           BatchStatsCallback batchStatsCallback) {
     int e = 0;
@@ -35,8 +33,11 @@ void NeuralNetwork::train(std::vector<NNMatrixPtr>& X, std::vector<NNMatrixPtr>&
             return;
         }
         LOG << "Epic " << e << std::endl;
-        NNUtils::shuffle(X, Y);
-        int numBatches = (X.size() + 1) / batchSize;
+        auto& trainData = dataSet.trainInput_;
+        auto& trainLabel = dataSet.trainLabel_;
+
+        NNUtils::shuffle(trainData, trainLabel);
+        int numBatches = (trainData.size() + 1) / batchSize;
         float epochLoss = 0.0f;
         for (int b = 0; b < numBatches; b++) {
             if (stopCallback && stopCallback()) {
@@ -45,8 +46,8 @@ void NeuralNetwork::train(std::vector<NNMatrixPtr>& X, std::vector<NNMatrixPtr>&
             if (b % 200 == 0) {
                 LOG << "Epic " << e << ", batch " << b << " starts" << std::endl;
             }
-            std::vector<NNMatrixPtr> batchX = NNUtils::getBatch(X, b, batchSize);
-            std::vector<NNMatrixPtr> batchY = NNUtils::getBatch(Y, b, batchSize);
+            std::vector<NNMatrixPtr> batchX = NNUtils::getBatch(trainData, b, batchSize);
+            std::vector<NNMatrixPtr> batchY = NNUtils::getBatch(trainLabel, b, batchSize);
             forward(e, b, batchX, layerCallback);
             if (batchCallback && !batchX.empty() && !layerOutputs.empty() &&
                 !layerOutputs.back().empty()) {
@@ -82,7 +83,7 @@ void NeuralNetwork::train(std::vector<NNMatrixPtr>& X, std::vector<NNMatrixPtr>&
         }
 
         float avgLoss = epochLoss / numBatches;
-        float acc = accuracy(e, testX, testY);
+        float acc = accuracy(e, dataSet.testInput_, dataSet.testLabel_);
         LOG << "Epic " << e + 1 << "/" << epochNum << ", loss " << avgLoss << ", acc "
             << std::setprecision(3) << acc * 100;
         if (callback) {

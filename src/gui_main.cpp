@@ -1,3 +1,4 @@
+#include "NNDataSetManager.h"
 #include "NNUtils.h"
 #include "NeuralNetwork.h"
 
@@ -20,11 +21,6 @@
 
 #include <GLFW/glfw3.h>
 #include <OpenGL/gl3.h>
-
-const char* MNIST_TRAIN_DATA_FILE = "mnist/train-images-idx3-ubyte";
-const char* MNIST_TRAIN_LABEL_FILE = "mnist/train-labels-idx1-ubyte";
-const char* MNISt_TEST_DATA_FILE = "mnist/t10k-images-idx3-ubyte";
-const char* MNIST_TEST_LABEL_FILE = "mnist/t10k-labels-idx1-ubyte";
 
 const int INPUT_SIZE = 784; // 28x28 pixels
 const int HIDDEN1_SIZE = 128;
@@ -65,7 +61,7 @@ static GLFWwindow* initWindow() {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
-    GLFWwindow* window = glfwCreateWindow(1000, 700, "NN Training - Dear ImGui", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1000, 700, "NN Training", nullptr, nullptr);
     if (!window) {
         glfwTerminate();
         return nullptr;
@@ -78,21 +74,7 @@ static GLFWwindow* initWindow() {
 }
 
 static void startTraining(TrainingStats& stats) {
-    NNLOG_INFO("nn_gui") << "Read train data from " << MNIST_TRAIN_DATA_FILE;
-    auto inputs = NNUtils::read_mnist_data(MNIST_TRAIN_DATA_FILE);
-    NNUtils::normalizeMnistData(inputs);
-
-    NNLOG_INFO("nn_gui") << "Read train label from " << MNIST_TRAIN_LABEL_FILE;
-    auto labels = NNUtils::read_mnist_labels(MNIST_TRAIN_LABEL_FILE);
-    NNUtils::normalizeMnistLabel(labels);
-
-    NNLOG_INFO("nn_gui") << "Read test data from " << MNISt_TEST_DATA_FILE;
-    auto testInputs = NNUtils::read_mnist_data(MNISt_TEST_DATA_FILE);
-    NNUtils::normalizeMnistData(testInputs);
-
-    NNLOG_INFO("nn_gui") << "Read test label from " << MNIST_TEST_LABEL_FILE;
-    auto testLabels = NNUtils::read_mnist_labels(MNIST_TEST_LABEL_FILE);
-    NNUtils::normalizeMnistLabel(testLabels);
+    auto dataSet = NNDataSetManager::loadMnistDataSet();
 
     std::vector<int> cfg{INPUT_SIZE, HIDDEN1_SIZE, HIDDEN2_SIZE, OUTPUT_SIZE};
     auto nn = NeuralNetwork(cfg);
@@ -158,8 +140,8 @@ static void startTraining(TrainingStats& stats) {
 
     NeuralNetwork::StopCallback stopCallback = [&]() { return stats.stop.load(); };
 
-    nn.train(inputs, labels, testInputs, testLabels, EPOCHS, BATCH_SIZE, LEARNING_RATE, MOMENTUM,
-             callback, layerCallback, batchCallback, stopCallback, batchStatsCallback);
+    nn.train(dataSet, EPOCHS, BATCH_SIZE, LEARNING_RATE, MOMENTUM, callback, layerCallback,
+             batchCallback, stopCallback, batchStatsCallback);
     stats.activeLayer.store(-1);
     stats.activePhase.store(static_cast<int>(NeuralNetwork::LayerPhase::Idle));
     stats.done.store(true);
@@ -308,8 +290,8 @@ static void drawDnnTopology(ImDrawList* drawList, const ImVec2& origin, const Im
         int outputSize = 0;
         if (i == 0) {
             // Input layer represents the input vector shape: (INPUT_SIZE x 1)
-            inputSize = layers[i].weightRows;
-            outputSize = 1;
+            inputSize = 1;
+            outputSize = layers[i].weightRows;
         } else {
             inputSize = layers[i - 1].weightRows;
             outputSize = layers[i].weightRows;
@@ -505,8 +487,6 @@ int main(int argc, char** argv) {
         ImDrawList* imgDraw = ImGui::GetWindowDrawList();
         imgDraw->AddRectFilled(imgPos, ImVec2(imgPos.x + imgSize.x, imgPos.y + imgSize.y),
                                IM_COL32(18, 20, 26, 255));
-        imgDraw->AddRect(imgPos, ImVec2(imgPos.x + imgSize.x, imgPos.y + imgSize.y),
-                         IM_COL32(70, 80, 90, 255));
         {
             std::lock_guard<std::mutex> lock(stats.mutex);
             drawInputImage(imgDraw, imgPos, imgSize, stats.currentImage);
@@ -517,6 +497,8 @@ int main(int argc, char** argv) {
         ImGui::BeginChild("TrainingRight", ImVec2(colW, 0.0f), true);
         int outputIndex = -1;
         float outputValue = 0.0f;
+        imgDraw->AddRect(imgPos, ImVec2(imgPos.x + imgSize.x, imgPos.y + imgSize.y),
+                         IM_COL32(70, 80, 90, 255));
         {
             std::lock_guard<std::mutex> lock(stats.mutex);
             outputIndex = stats.currentOutputIndex;

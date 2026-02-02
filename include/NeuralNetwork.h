@@ -1,5 +1,6 @@
 #pragma once
 
+#include "NNDataSet.h"
 #include "NNLayer.h"
 
 #include <cstdint>
@@ -24,11 +25,9 @@ class NeuralNetwork {
     enum class LayerPhase : std::uint8_t { Idle = 0, Forward = 1, Backward = 2 };
     using LayerCallback =
         std::function<void(int epoch, int batch, int layerIndex, LayerPhase phase)>;
-    void train(std::vector<NNMatrixPtr>& X, std::vector<NNMatrixPtr>& Y,
-               std::vector<NNMatrixPtr>& testX, std::vector<NNMatrixPtr>& testY, int epochNum,
-               int batchSize, float learningRate, float momentum, TrainCallback callback = nullptr,
-               LayerCallback layerCallback = nullptr, BatchCallback batchCallback = nullptr,
-               StopCallback stopCallback = nullptr,
+    void train(NNDataSet& dataset, int epochNum, int batchSize, float learningRate, float momentum,
+               TrainCallback callback = nullptr, LayerCallback layerCallback = nullptr,
+               BatchCallback batchCallback = nullptr, StopCallback stopCallback = nullptr,
                BatchStatsCallback batchStatsCallback = nullptr);
 
   private:
