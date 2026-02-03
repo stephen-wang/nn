@@ -48,6 +48,12 @@ make nn_gui_info
 ./nn_gui
 ```
 
+The GUI build uses the same entry point as the CLI build. You can force CLI mode with:
+
+```zsh
+./nn_gui --cli
+```
+
 ## Run
 
 ```zsh

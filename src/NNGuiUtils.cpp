@@ -1,4 +1,5 @@
 #include "NNDataSetManager.h"
+#include "NNGuiUtils.h"
 #include "NNUtils.h"
 #include "NeuralNetwork.h"
 
@@ -31,7 +32,7 @@ const int BATCH_SIZE = 16;
 const float LEARNING_RATE = 0.005f;
 const float MOMENTUM = 0.9f;
 
-struct TrainingStats {
+struct NNGuiUtils::TrainingStats {
     std::vector<float> loss;
     std::vector<float> acc;
     std::mutex mutex;
@@ -51,7 +52,7 @@ struct TrainingStats {
     std::atomic<bool> stop{false};
 };
 
-static GLFWwindow* initWindow() {
+GLFWwindow* NNGuiUtils::initWindow() {
     if (!glfwInit()) {
         return nullptr;
     }
@@ -73,7 +74,7 @@ static GLFWwindow* initWindow() {
     return window;
 }
 
-static void startTraining(TrainingStats& stats) {
+void NNGuiUtils::startTraining(TrainingStats& stats) {
     auto dataSet = NNDataSetManager::loadMnistDataSet();
 
     std::vector<int> cfg{INPUT_SIZE, HIDDEN1_SIZE, HIDDEN2_SIZE, OUTPUT_SIZE};
@@ -147,8 +148,8 @@ static void startTraining(TrainingStats& stats) {
     stats.done.store(true);
 }
 
-static void drawInputImage(ImDrawList* drawList, const ImVec2& origin, const ImVec2& size,
-                           const std::vector<float>& image) {
+void NNGuiUtils::drawInputImage(ImDrawList* drawList, const ImVec2& origin, const ImVec2& size,
+                                const std::vector<float>& image) {
     const int width = 28;
     const int height = 28;
     if (image.size() < static_cast<size_t>(width * height)) {
@@ -184,6 +185,16 @@ static void drawInputImage(ImDrawList* drawList, const ImVec2& origin, const ImV
     drawList->AddRect(ImVec2(offsetX, offsetY), ImVec2(offsetX + imgW, offsetY + imgH),
                       IM_COL32(80, 90, 110, 255));
     drawList->PopClipRect();
+}
+
+static float clampf(float value, float lo, float hi) {
+    if (value < lo) {
+        return lo;
+    }
+    if (value > hi) {
+        return hi;
+    }
+    return value;
 }
 
 static ImU32 scaleColor(ImU32 color, float scale) {
@@ -317,7 +328,8 @@ static void drawDnnTopology(ImDrawList* drawList, const ImVec2& origin, const Im
         ImVec2 scaledTextSize(textSize.x * scale, textSize.y * scale);
 
         float textX = x - scaledTextSize.x * 0.5f;
-        textX = std::clamp(textX, minX, std::max(minX, maxX - scaledTextSize.x));
+        const float hi = std::max(minX, maxX - scaledTextSize.x);
+        textX = clampf(textX, minX, hi);
         ImVec2 textPos(textX, labelY);
         drawList->AddText(font, labelFontSize, textPos, IM_COL32(230, 230, 240, 255), label);
     }
@@ -368,7 +380,7 @@ static void drawDnnTopology(ImDrawList* drawList, const ImVec2& origin, const Im
     }
 }
 
-int main(int argc, char** argv) {
+int NNGuiUtils::RunTrainingGui() {
     GLFWwindow* window = initWindow();
     if (!window) {
         std::cerr << "Failed to initialize GLFW window" << std::endl;
