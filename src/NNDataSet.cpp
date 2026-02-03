@@ -1,12 +1,14 @@
 #include "NNDataSet.h"
 
 #include <stdexcept>
+#include <utility>
 
-NNDataSet::NNDataSet(const std::string& datasetLabel, const NNMatrixPtrVector& trainInput,
-                     const NNMatrixPtrVector& trainLabel, const NNMatrixPtrVector& testInput,
-                     const NNMatrixPtrVector& testLabel)
-    : datasetLabel_(datasetLabel), trainInput_(trainInput), trainLabel_(trainLabel),
-      testInput_(testInput), testLabel_(testLabel) {
+NNDataSet::NNDataSet(std::string datasetLabel, NNMatrixPtrVector trainInput,
+                     NNMatrixPtrVector trainLabel, NNMatrixPtrVector testInput,
+                     NNMatrixPtrVector testLabel)
+    : datasetLabel_(std::move(datasetLabel)), trainInput_(std::move(trainInput)),
+      trainLabel_(std::move(trainLabel)), testInput_(std::move(testInput)),
+      testLabel_(std::move(testLabel)) {
 }
 
 NNDataSet::NNDataSet(NNDataSet&& other) noexcept {

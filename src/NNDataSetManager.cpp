@@ -2,6 +2,8 @@
 
 #include "NNUtils.h"
 
+#include <utility>
+
 static const char* MNIST_TRAIN_DATA_FILE = "mnist/train-images-idx3-ubyte";
 static const char* MNIST_TRAIN_LABEL_FILE = "mnist/train-labels-idx1-ubyte";
 static const char* MNISt_TEST_DATA_FILE = "mnist/t10k-images-idx3-ubyte";
@@ -24,5 +26,6 @@ NNDataSet NNDataSetManager::loadMnistDataSet() {
     auto testLabels = NNUtils::read_mnist_labels(MNIST_TEST_LABEL_FILE);
     NNUtils::normalizeMnistLabel(testLabels);
 
-    return NNDataSet("mnist dataset", inputs, labels, testInputs, testLabels);
+    return {"mnist dataset", std::move(inputs), std::move(labels), std::move(testInputs),
+            std::move(testLabels)};
 }

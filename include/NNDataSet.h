@@ -7,9 +7,8 @@
 
 class NNDataSet {
   public:
-    NNDataSet(const std::string& datasetLabel, const NNMatrixPtrVector& trainInput,
-              const NNMatrixPtrVector& trainLabel, const NNMatrixPtrVector& testInput,
-              const NNMatrixPtrVector& testLabel);
+    NNDataSet(std::string datasetLabel, NNMatrixPtrVector trainInput, NNMatrixPtrVector trainLabel,
+              NNMatrixPtrVector testInput, NNMatrixPtrVector testLabel);
 
     NNDataSet(const NNDataSet& other) = delete;
     NNDataSet(NNDataSet&& other) noexcept;
