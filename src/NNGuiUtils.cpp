@@ -1,8 +1,8 @@
 #include "NNGuiUtils.h"
 
+#include "DNN.h"
 #include "NNDatasetManager.h"
 #include "NNUtils.h"
-#include "NeuralNetwork.h"
 
 #include <algorithm>
 #include <array>
@@ -76,7 +76,7 @@ GLFWwindow* NNGuiUtils::initWindow() {
 }
 
 void NNGuiUtils::startTraining(TrainingStats& stats) {
-    auto dataset = NNDatasetManager::loadMnistDataset();
+    auto dataset = NNDatasetManager::loadMnist();
 
     std::vector<int> cfg{INPUT_SIZE, HIDDEN1_SIZE, HIDDEN2_SIZE, OUTPUT_SIZE};
     auto nn = DNN(cfg);

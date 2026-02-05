@@ -55,7 +55,7 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    auto dataSet = NNDatasetManager::loadMnistDataset();
+    auto dataSet = NNDatasetManager::loadMnist();
     std::vector<int> cfg{INPUT_SIZE, HIDDEN1_SIZE, HIDDEN2_SIZE, OUTPUT_SIZE};
     auto nn = DNN(cfg);
     nn.train(dataSet, EPOCHS, BATCH_SIZE, LEARNING_RATE, MOMENTUM, nullptr, nullptr, nullptr,
