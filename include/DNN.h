@@ -1,19 +1,19 @@
 #pragma once
 
-#include "NNDataSet.h"
-#include "NNLayer.h"
+#include "FCNNLayer.h"
+#include "NNDataset.h"
 
 #include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
 
-class NeuralNetwork {
+class DNN { // Simple Deep Neural Network
   private:
-    const std::string TAG = "NeuralNetwork";
+    const std::string TAG = "DNN";
 
   public:
-    NeuralNetwork(const std::vector<int>& config);
+    DNN(const std::vector<int>& config);
     using TrainCallback =
         std::function<void(int epoch, int totalEpochs, float loss, float accuracy)>;
     using BatchCallback =
@@ -25,7 +25,7 @@ class NeuralNetwork {
     enum class LayerPhase : std::uint8_t { Idle = 0, Forward = 1, Backward = 2 };
     using LayerCallback =
         std::function<void(int epoch, int batch, int layerIndex, LayerPhase phase)>;
-    void train(NNDataSet& dataset, int epochNum, int batchSize, float learningRate, float momentum,
+    void train(NNDataset& dataset, int epochNum, int batchSize, float learningRate, float momentum,
                TrainCallback callback = nullptr, LayerCallback layerCallback = nullptr,
                BatchCallback batchCallback = nullptr, StopCallback stopCallback = nullptr,
                BatchStatsCallback batchStatsCallback = nullptr);
@@ -45,6 +45,6 @@ class NeuralNetwork {
     int argmax(const NNMatrix& x);
 
   public:
-    std::vector<NNLayer> layers;
+    std::vector<FCNNLayer> layers;
     std::vector<std::vector<NNMatrix>> layerOutputs;
 };

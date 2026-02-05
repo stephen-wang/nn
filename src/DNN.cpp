@@ -1,4 +1,4 @@
-#include "NeuralNetwork.h"
+#include "DNN.h"
 
 #include "NNFunctions.h"
 #include "NNUtils.h"
@@ -7,15 +7,15 @@
 #include <iostream>
 #include <math.h>
 
-NeuralNetwork::NeuralNetwork(const std::vector<int>& config) {
+DNN::DNN(const std::vector<int>& config) {
     int configSize = config.size();
     if (configSize < 3) {
-        LOG << "Invalid NeuralNetwork config " << configSize << std::endl;
+        LOG << "Invalid DNN config " << configSize << std::endl;
         return;
     }
 
     for (int l = 1; l < configSize; l++) {
-        auto layer = NNLayer(config[l - 1], config[l]);
+        auto layer = FCNNLayer(config[l - 1], config[l]);
         // layer.dump();
         layers.push_back(layer);
     }
@@ -23,10 +23,9 @@ NeuralNetwork::NeuralNetwork(const std::vector<int>& config) {
     layerOutputs = std::vector<std::vector<NNMatrix>>(configSize - 1, std::vector<NNMatrix>());
 }
 
-void NeuralNetwork::train(NNDataSet& dataSet, int epochNum, int batchSize, float learningRate,
-                          float momentum, TrainCallback callback, LayerCallback layerCallback,
-                          BatchCallback batchCallback, StopCallback stopCallback,
-                          BatchStatsCallback batchStatsCallback) {
+void DNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningRate, float momentum,
+                TrainCallback callback, LayerCallback layerCallback, BatchCallback batchCallback,
+                StopCallback stopCallback, BatchStatsCallback batchStatsCallback) {
     int e = 0;
     while (e < epochNum) {
         if (stopCallback && stopCallback()) {
@@ -93,8 +92,8 @@ void NeuralNetwork::train(NNDataSet& dataSet, int epochNum, int batchSize, float
     }
 }
 
-NNMatrix NeuralNetwork::forward(int epic, int batchNo, const std::vector<NNMatrixPtr>& X,
-                                LayerCallback layerCallback) {
+NNMatrix DNN::forward(int epic, int batchNo, const std::vector<NNMatrixPtr>& X,
+                      LayerCallback layerCallback) {
     for (auto& batchOutpus : layerOutputs) {
         batchOutpus.clear();
     }
@@ -119,9 +118,9 @@ NNMatrix NeuralNetwork::forward(int epic, int batchNo, const std::vector<NNMatri
     return layerOutputs[layers.size() - 1][X.size() - 1];
 }
 
-void NeuralNetwork::backward(const std::vector<NNMatrixPtr>& X, const std::vector<NNMatrixPtr>& Y,
-                             float learningRate, float momentum, int epic, int batchNo,
-                             LayerCallback layerCallback) {
+void DNN::backward(const std::vector<NNMatrixPtr>& X, const std::vector<NNMatrixPtr>& Y,
+                   float learningRate, float momentum, int epic, int batchNo,
+                   LayerCallback layerCallback) {
     int batchSize = X.size();
     std::vector<NNMatrix> dws;
     std::vector<NNMatrix> dbs;
@@ -184,7 +183,7 @@ void NeuralNetwork::backward(const std::vector<NNMatrixPtr>& X, const std::vecto
     }
 }
 
-NNMatrix NeuralNetwork::calculateDW(const NNMatrix& input, const NNMatrix& dz) {
+NNMatrix DNN::calculateDW(const NNMatrix& input, const NNMatrix& dz) {
     assert(input.getColSize() == 1);
     assert(dz.getColSize() == 1);
 
@@ -198,7 +197,7 @@ NNMatrix NeuralNetwork::calculateDW(const NNMatrix& input, const NNMatrix& dz) {
     return dw;
 }
 
-float NeuralNetwork::loss(std::vector<NNMatrixPtr>& Y) {
+float DNN::loss(std::vector<NNMatrixPtr>& Y) {
     float totalLoss = 0.0f;
     for (int i = 0; i < Y.size(); i++) {
         auto& actual = layerOutputs[layers.size() - 1][i];
@@ -209,7 +208,7 @@ float NeuralNetwork::loss(std::vector<NNMatrixPtr>& Y) {
     return totalLoss / Y.size();
 }
 
-float NeuralNetwork::calculateCrossEntropyLoss(const NNMatrix& actual, const NNMatrix& expect) {
+float DNN::calculateCrossEntropyLoss(const NNMatrix& actual, const NNMatrix& expect) {
     assert(actual.getRowSize() == expect.getRowSize());
     assert(actual.getColSize() == 1);
     assert(expect.getColSize() == 1);
@@ -226,8 +225,8 @@ float NeuralNetwork::calculateCrossEntropyLoss(const NNMatrix& actual, const NNM
     return loss;
 }
 
-float NeuralNetwork::accuracy(int epic, const std::vector<NNMatrixPtr>& x_test,
-                              const std::vector<NNMatrixPtr>& y_test) {
+float DNN::accuracy(int epic, const std::vector<NNMatrixPtr>& x_test,
+                    const std::vector<NNMatrixPtr>& y_test) {
     assert(x_test.size() == y_test.size());
     int correct = 0;
     for (int i = 0; i < x_test.size(); i++) {
@@ -241,12 +240,12 @@ float NeuralNetwork::accuracy(int epic, const std::vector<NNMatrixPtr>& x_test,
     return (float) correct / x_test.size();
 }
 
-NNMatrix NeuralNetwork::predict(int epic, NNMatrixPtr x) {
+NNMatrix DNN::predict(int epic, NNMatrixPtr x) {
     std::vector<NNMatrixPtr> input = {x};
     return forward(epic, 0, input, nullptr);
 }
 
-int NeuralNetwork::argmax(const NNMatrix& x) {
+int DNN::argmax(const NNMatrix& x) {
     assert(x.getColSize() == 1);
     return x.getIndexOfColMax(0);
 }

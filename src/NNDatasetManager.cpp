@@ -1,4 +1,4 @@
-#include "NNDataSetManager.h"
+#include "NNDatasetManager.h"
 
 #include "NNUtils.h"
 
@@ -9,7 +9,7 @@ static const char* MNIST_TRAIN_LABEL_FILE = "mnist/train-labels-idx1-ubyte";
 static const char* MNISt_TEST_DATA_FILE = "mnist/t10k-images-idx3-ubyte";
 static const char* MNIST_TEST_LABEL_FILE = "mnist/t10k-labels-idx1-ubyte";
 
-NNDataSet NNDataSetManager::loadMnistDataSet() {
+NNDataset NNDatasetManager::loadMnistDataset() {
     NNLOG_INFO("nn_gui") << "Read train data from " << MNIST_TRAIN_DATA_FILE;
     auto inputs = NNUtils::read_mnist_data(MNIST_TRAIN_DATA_FILE);
     NNUtils::normalizeMnistData(inputs);

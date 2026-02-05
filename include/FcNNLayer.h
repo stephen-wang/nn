@@ -4,9 +4,9 @@
 #include "NNMatrix.h"
 #include "NNUtils.h"
 
-class NNLayer {
+class FCNNLayer { // fully connecter neural network layer
   public:
-    NNLayer(int inputSize = 1, int outputSize = 1);
+    FCNNLayer(int inputSize = 1, int outputSize = 1);
     NNMatrix forward(const NNMatrix& input, MatrixFunc derivateFunc = NNFunctions::SigmoidDrevative,
                      bool debug = false);
     NNMatrix calculatePrevLayerDA(const NNMatrix& dz);
@@ -17,7 +17,7 @@ class NNLayer {
     void dump();
 
   private:
-    const std::string TAG = "NNLayer";
+    const std::string TAG = "FCNNLayer";
     NNMatrix weight;
     NNMatrix vWeight;
     NNMatrix bias;

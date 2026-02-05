@@ -5,15 +5,15 @@
 #include <string>
 #include <vector>
 
-class NNDataSet {
+class NNDataset {
   public:
-    NNDataSet(std::string datasetLabel, NNMatrixPtrVector trainInput, NNMatrixPtrVector trainLabel,
+    NNDataset(std::string datasetLabel, NNMatrixPtrVector trainInput, NNMatrixPtrVector trainLabel,
               NNMatrixPtrVector testInput, NNMatrixPtrVector testLabel);
 
-    NNDataSet(const NNDataSet& other) = delete;
-    NNDataSet(NNDataSet&& other) noexcept;
+    NNDataset(const NNDataset& other) = delete;
+    NNDataset(NNDataset&& other) noexcept;
 
-    virtual ~NNDataSet() {
+    virtual ~NNDataset() {
         trainInput_.clear();
         trainLabel_.clear();
         testInput_.clear();

@@ -1,5 +1,6 @@
-#include "NNDataSetManager.h"
 #include "NNGuiUtils.h"
+
+#include "NNDatasetManager.h"
 #include "NNUtils.h"
 #include "NeuralNetwork.h"
 
@@ -75,13 +76,12 @@ GLFWwindow* NNGuiUtils::initWindow() {
 }
 
 void NNGuiUtils::startTraining(TrainingStats& stats) {
-    auto dataSet = NNDataSetManager::loadMnistDataSet();
+    auto dataset = NNDatasetManager::loadMnistDataset();
 
     std::vector<int> cfg{INPUT_SIZE, HIDDEN1_SIZE, HIDDEN2_SIZE, OUTPUT_SIZE};
-    auto nn = NeuralNetwork(cfg);
+    auto nn = DNN(cfg);
 
-    NeuralNetwork::TrainCallback callback = [&](int epoch, int totalEpochs, float loss,
-                                                float accuracy) {
+    DNN::TrainCallback callback = [&](int epoch, int totalEpochs, float loss, float accuracy) {
         std::lock_guard<std::mutex> lock(stats.mutex);
         stats.loss.push_back(loss);
         stats.acc.push_back(accuracy * 100.0f);
@@ -93,14 +93,14 @@ void NNGuiUtils::startTraining(TrainingStats& stats) {
         }
     };
 
-    NeuralNetwork::LayerCallback layerCallback = [&](int epoch, int batch, int layerIndex,
-                                                     NeuralNetwork::LayerPhase phase) {
+    DNN::LayerCallback layerCallback = [&](int epoch, int batch, int layerIndex,
+                                           DNN::LayerPhase phase) {
         stats.activeLayer.store(layerIndex);
         stats.activePhase.store(static_cast<int>(phase));
     };
 
-    NeuralNetwork::BatchCallback batchCallback = [&](int epoch, int batch, const NNMatrix& input,
-                                                     const NNMatrix& output) {
+    DNN::BatchCallback batchCallback = [&](int epoch, int batch, const NNMatrix& input,
+                                           const NNMatrix& output) {
         std::lock_guard<std::mutex> lock(stats.mutex);
         if (batch % 10 == 0) {
             int rows = input.getRowSize();
@@ -113,38 +113,38 @@ void NNGuiUtils::startTraining(TrainingStats& stats) {
         }
     };
 
-    NeuralNetwork::BatchStatsCallback batchStatsCallback =
-        [&](int epoch, int totalEpochs, int batch, int totalBatches, float batchLoss,
-            float epochLoss, float batchAccuracy) {
-            (void) totalEpochs;
-            const int prevEpoch = stats.currentEpoch.load();
-            if (epoch != prevEpoch) {
-                stats.epochAccuracy.store(NAN);
-            }
-            stats.currentEpoch.store(epoch);
-            stats.currentBatch.store(batch);
-            stats.totalBatches.store(totalBatches);
-            stats.batchLoss.store(batchLoss);
-            stats.epochLoss.store(epochLoss);
-            stats.batchAccuracy.store(batchAccuracy);
+    DNN::BatchStatsCallback batchStatsCallback = [&](int epoch, int totalEpochs, int batch,
+                                                     int totalBatches, float batchLoss,
+                                                     float epochLoss, float batchAccuracy) {
+        (void) totalEpochs;
+        const int prevEpoch = stats.currentEpoch.load();
+        if (epoch != prevEpoch) {
+            stats.epochAccuracy.store(NAN);
+        }
+        stats.currentEpoch.store(epoch);
+        stats.currentBatch.store(batch);
+        stats.totalBatches.store(totalBatches);
+        stats.batchLoss.store(batchLoss);
+        stats.epochLoss.store(epochLoss);
+        stats.batchAccuracy.store(batchAccuracy);
 
-            // Provide an in-epoch running accuracy so the UI doesn't show "..." for Epoc Accuracy.
-            // This will be overwritten by the end-of-epoch TrainCallback (test accuracy).
-            const float prevEpochAcc = stats.epochAccuracy.load();
-            float runningEpochAcc = batchAccuracy;
-            if (batch > 1 && std::isfinite(prevEpochAcc)) {
-                runningEpochAcc = (prevEpochAcc * static_cast<float>(batch - 1) + batchAccuracy) /
-                                  static_cast<float>(batch);
-            }
-            stats.epochAccuracy.store(runningEpochAcc);
-        };
+        // Provide an in-epoch running accuracy so the UI doesn't show "..." for Epoc Accuracy.
+        // This will be overwritten by the end-of-epoch TrainCallback (test accuracy).
+        const float prevEpochAcc = stats.epochAccuracy.load();
+        float runningEpochAcc = batchAccuracy;
+        if (batch > 1 && std::isfinite(prevEpochAcc)) {
+            runningEpochAcc = (prevEpochAcc * static_cast<float>(batch - 1) + batchAccuracy) /
+                              static_cast<float>(batch);
+        }
+        stats.epochAccuracy.store(runningEpochAcc);
+    };
 
-    NeuralNetwork::StopCallback stopCallback = [&]() { return stats.stop.load(); };
+    DNN::StopCallback stopCallback = [&]() { return stats.stop.load(); };
 
-    nn.train(dataSet, EPOCHS, BATCH_SIZE, LEARNING_RATE, MOMENTUM, callback, layerCallback,
+    nn.train(dataset, EPOCHS, BATCH_SIZE, LEARNING_RATE, MOMENTUM, callback, layerCallback,
              batchCallback, stopCallback, batchStatsCallback);
     stats.activeLayer.store(-1);
-    stats.activePhase.store(static_cast<int>(NeuralNetwork::LayerPhase::Idle));
+    stats.activePhase.store(static_cast<int>(DNN::LayerPhase::Idle));
     stats.done.store(true);
 }
 
@@ -335,10 +335,9 @@ static void drawDnnTopology(ImDrawList* drawList, const ImVec2& origin, const Im
     }
 
     const ImU32 linkColorDim = IM_COL32(60, 60, 70, 120);
-    const ImU32 linkColorActive =
-        activePhase == static_cast<int>(NeuralNetwork::LayerPhase::Backward)
-            ? IM_COL32(255, 190, 140, 200)
-            : IM_COL32(140, 200, 255, 200);
+    const ImU32 linkColorActive = activePhase == static_cast<int>(DNN::LayerPhase::Backward)
+                                      ? IM_COL32(255, 190, 140, 200)
+                                      : IM_COL32(140, 200, 255, 200);
     for (size_t i = 0; i + 1 < layerPositions.size(); ++i) {
         const auto& from = layerPositions[i];
         const auto& to = layerPositions[i + 1];
@@ -355,7 +354,7 @@ static void drawDnnTopology(ImDrawList* drawList, const ImVec2& origin, const Im
     for (size_t i = 0; i < layerPositions.size(); ++i) {
         const auto& positions = layerPositions[i];
         const bool highlight = (static_cast<int>(i) == activeLayer) &&
-                               (activePhase != static_cast<int>(NeuralNetwork::LayerPhase::Idle));
+                               (activePhase != static_cast<int>(DNN::LayerPhase::Idle));
         const ImU32 nodeColor =
             highlight ? layers[i].nodeColor : scaleColor(layers[i].nodeColor, 0.35f);
         const ImU32 suspColor =

@@ -1,6 +1,6 @@
-#include "NNDataSetManager.h"
+#include "DNN.h"
+#include "NNDatasetManager.h"
 #include "NNUtils.h"
-#include "NeuralNetwork.h"
 
 #include <string>
 
@@ -55,9 +55,9 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    auto dataSet = NNDataSetManager::loadMnistDataSet();
+    auto dataSet = NNDatasetManager::loadMnistDataset();
     std::vector<int> cfg{INPUT_SIZE, HIDDEN1_SIZE, HIDDEN2_SIZE, OUTPUT_SIZE};
-    auto nn = NeuralNetwork(cfg);
+    auto nn = DNN(cfg);
     nn.train(dataSet, EPOCHS, BATCH_SIZE, LEARNING_RATE, MOMENTUM, nullptr, nullptr, nullptr,
              nullptr);
 
