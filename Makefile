@@ -10,7 +10,7 @@ SRC_DIR = src
 INC_DIR = include
 CXXFLAGS = -std=c++17 -Wall -g -I$(INC_DIR) -Ithird_party
 TESTFLAGS =  -I$(GETST_LIB_INC) -L$(GTEST_LIB_PATH) $(GTEST_LIBS) -pthread
-TARGET = main
+TARGET = nn
 TEST_TARGET = nn_test
 COVERAGE_TARGET = nn_test_cov
 GUI_TARGET = nn_gui
