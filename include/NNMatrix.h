@@ -36,6 +36,9 @@ class NNMatrix : public std::enable_shared_from_this<NNMatrix> {
     void dump(bool showFullLine = false, int lineSize = -1, bool dumpToFile = false) const;
     void toOneHot();
 
+    float* data() { return mem_; }
+    const float* data() const { return mem_; }
+
   private:
     const std::string TAG = "NNMatrix";
     const int MAX_DUMP_LINE_SIZE = 28;

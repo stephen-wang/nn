@@ -1,10 +1,11 @@
 #pragma once
 
 #include "NNFunctions.h"
+#include "NNLayer.h"
 #include "NNMatrix.h"
 #include "NNUtils.h"
 
-class FCNNLayer { // fully connecter neural network layer
+class FCNNLayer : public NNLayer { // fully connecter neural network layer
   public:
     FCNNLayer(int inputSize = 1, int outputSize = 1);
     NNMatrix forward(const NNMatrix& input, MatrixFunc derivateFunc = NNFunctions::SigmoidDrevative,

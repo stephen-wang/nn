@@ -3,6 +3,7 @@
 #include "NNMatrix.h"
 #include "nnlog/nnlog.h"
 
+#include <cassert>
 #include <cstdint>
 #include <vector>
 
@@ -19,6 +20,14 @@ class NNUtils {
     static uint32_t swap_endian(uint32_t val);
 
   public:
+    // Integer ceiling division for non-negative values.
+    // Returns ceil(numer / denom). denom must be > 0.
+    static int ceilDiv(int numer, int denom) {
+        assert(denom > 0);
+        assert(numer >= 0);
+        return (numer + denom - 1) / denom;
+    }
+
     static std::vector<NNMatrixPtr> read_mnist_data(const std::string& filePath);
     static std::vector<NNMatrixPtr> read_mnist_labels(const std::string& filePath);
     static void shuffle(std::vector<NNMatrixPtr>& input, std::vector<NNMatrixPtr>& label);
