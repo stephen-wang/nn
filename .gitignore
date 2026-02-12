@@ -1,0 +1,18 @@
+.DS_Store
+.vscode/
+build/
+coverage/
+compile_commands.json
+.cache/
+.clangd/
+imgui.ini
+main
+nn
+nn_gui
+nn_gui.dSYM/
+nn_test_cov
+main.dSYM/
+*.py
+
+# Large local datasets (don’t commit)
+dataset/
