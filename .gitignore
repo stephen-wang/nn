@@ -14,5 +14,3 @@ nn_test_cov
 main.dSYM/
 *.py
 
-# Large local datasets (don’t commit)
-dataset/
