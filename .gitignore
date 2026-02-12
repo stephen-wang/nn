@@ -13,4 +13,5 @@ nn_gui.dSYM/
 nn_test_cov
 main.dSYM/
 *.py
-
+test.bin
+train.bin
