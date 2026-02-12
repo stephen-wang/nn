@@ -53,7 +53,12 @@ class ArgHelper {
         if (has("--dnn"))
             return ModelType::DNN;
 
-        if (const char* model = value("--model")) {
+        // Support both `--model` and `--mode` for convenience.
+        const char* model = value("--model");
+        if (!model) {
+            model = value("--mode");
+        }
+        if (model) {
             const std::string m = model;
             if (m == "cnn")
                 return ModelType::CNN;
@@ -65,10 +70,11 @@ class ArgHelper {
     }
 
     void printUsage(std::ostream& os, const char* program = "./main") const {
-        os << "Usage: " << program << " [--gui] [--cli] [--model dnn|cnn]\n"
+        os << "Usage: " << program << " [--gui] [--cli] [--model dnn|cnn] [--mode dnn|cnn]\n"
            << "  --gui  Run training GUI (requires nn_gui build)\n"
            << "  --cli  Force CLI training mode (useful for ./nn_gui --cli)\n"
            << "  --model dnn|cnn  Select network type (default: dnn)\n"
+           << "  --mode dnn|cnn   Alias for --model\n"
            << "  --dnn / --cnn    Short aliases for --model\n";
     }
 

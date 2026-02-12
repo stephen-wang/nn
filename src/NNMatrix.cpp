@@ -77,6 +77,17 @@ NNMatrix& NNMatrix::operator=(NNMatrix&& other) noexcept {
     return *this;
 }
 
+NNMatrix& NNMatrix::flatten() noexcept {
+    if (mem_ == nullptr || row_ <= 0 || col_ <= 0) {
+        return *this;
+    }
+
+    row_ *= col_;
+    col_ = 1;
+    return *this;
+
+}
+
 NNVector NNMatrix::getRow(int row) const {
     std::vector<float> ret;
     if (row >= row_) {
@@ -334,4 +345,27 @@ int NNMatrix::getIndexOfColMax(int col) const {
     }
 
     return ret;
+}
+
+float NNMatrix::getRegionMax(int i, int j, int stride) {
+    assert(mem_ != nullptr);
+    assert(stride > 0);
+    assert(i >= 0 && j >= 0);
+    assert(i < row_ && j < col_);
+
+    const int endRow = std::min(i + stride, row_);
+    const int endCol = std::min(j + stride, col_);
+
+    float maxVal = mem_[i * col_ + j];
+    for (int r = i; r < endRow; r++) {
+        const float* cur = mem_ + r * col_ + j;
+        for (int c = j; c < endCol; c++) {
+            const float v = cur[c - j];
+            if (v > maxVal) {
+                maxVal = v;
+            }
+        }
+    }
+
+    return maxVal;
 }

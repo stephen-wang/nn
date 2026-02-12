@@ -16,7 +16,7 @@ class NNDatasetManager {
     static std::vector<std::string> loadCifar100FineLabelNames();
 
   private:
-    static void readCifar100BinaryFile(const std::string& filePath, NNMatrixPtrVector& data,
-                                       NNMatrixPtrVector& labels);
+    static void readCifar100BinaryFile(const std::string& filePath, NNMatrixPtrV& data,
+                                       NNMatrixPtrV& labels);
     static std::vector<std::string> readCifar100LabelNamesFromFile(const std::string& filePath);
 };

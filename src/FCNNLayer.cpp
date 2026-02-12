@@ -4,8 +4,9 @@
 #include <sstream>
 
 FCNNLayer::FCNNLayer(int inputSize, int outputSize)
-    : weight(outputSize, inputSize), vWeight(outputSize, inputSize), bias(outputSize, 1),
-      vBias(outputSize, 1), dz_(outputSize, 1) {
+    : NNLayer(NNLayerType::FullyConnected), weight(outputSize, inputSize),
+      vWeight(outputSize, inputSize), bias(outputSize, 1), vBias(outputSize, 1),
+      dz_(outputSize, 1) {
     for (int i = 0; i < outputSize; i++) {
         for (int j = 0; j < inputSize; j++) {
             weight.set(i, j, NNUtils::xavierInit(inputSize, outputSize));
@@ -52,6 +53,28 @@ NNMatrix FCNNLayer::calculatePrevLayerDA(const NNMatrix& dz) {
     }
 
     return da;
+}
+
+NNMatrixPtrV FCNNLayer::forward(const NNMatrixPtrV& input) {
+    NNMatrixPtrV outputs;
+    if (input.empty() || input[0] == nullptr || input.size() > 1) {
+        LOG << "Empty input or null input[0] or multiple inputs";
+        return outputs;
+    }
+
+    outputs.reserve(1);
+    auto inMatrix = input[0];
+    if (inMatrix == nullptr || inMatrix->getRowSize() != weight.getColSize() ||
+        inMatrix->getColSize() != 1) {
+        LOG << "Mismatched or null input matrix";
+        return NNMatrixPtrV{};
+    }
+
+    auto outMatrix =
+        std::make_shared<NNMatrix>(forward(*inMatrix, NNFunctions::SigmoidFunc, false));
+    outputs.push_back(outMatrix);
+
+    return outputs;
 }
 
 void FCNNLayer::update(const NNMatrix& dw, const NNMatrix& db, float alpha, float momentum) {

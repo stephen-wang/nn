@@ -198,46 +198,37 @@ NNMatrix DNN::calculateDW(const NNMatrix& input, const NNMatrix& dz) {
 }
 
 float DNN::loss(std::vector<NNMatrixPtr>& Y) {
-    float totalLoss = 0.0f;
-    for (int i = 0; i < Y.size(); i++) {
-        auto& actual = layerOutputs[layers.size() - 1][i];
-        auto& expect = *(Y[i]);
-        totalLoss += calculateCrossEntropyLoss(actual, expect);
+    if (Y.empty() || layers.empty() || layerOutputs.empty()) {
+        return 0.0f;
     }
 
-    return totalLoss / Y.size();
-}
-
-float DNN::calculateCrossEntropyLoss(const NNMatrix& actual, const NNMatrix& expect) {
-    assert(actual.getRowSize() == expect.getRowSize());
-    assert(actual.getColSize() == 1);
-    assert(expect.getColSize() == 1);
-
-    float eps = 1e-15f;
-    float loss = 0.0f;
-    for (int i = 0; i < actual.getRowSize(); i++) {
-        float expectElem = expect.get(i, 0);
-        float actualElem = actual.get(i, 0);
-        float actualElemClipped = std::max(eps, std::min(1.0f - eps, actualElem));
-        loss -= expectElem * std::log(actualElemClipped);
+    auto& actualMats = layerOutputs[layers.size() - 1];
+    if (actualMats.size() != Y.size()) {
+        return 0.0f;
     }
 
-    return loss;
+    // Create non-owning pointers to existing matrices to reuse NN's pointer-based loss.
+    std::vector<NNMatrixPtr> actualPtrs;
+    actualPtrs.reserve(actualMats.size());
+    for (auto& m : actualMats) {
+        actualPtrs.emplace_back(NNMatrixPtr(&m, [](NNMatrix*) {
+            // non-owning
+        }));
+    }
+
+    return batchCrossEntropyLoss(actualPtrs, Y);
 }
 
 float DNN::accuracy(int epic, const std::vector<NNMatrixPtr>& x_test,
                     const std::vector<NNMatrixPtr>& y_test) {
     assert(x_test.size() == y_test.size());
-    int correct = 0;
-    for (int i = 0; i < x_test.size(); i++) {
-        auto x = x_test[i];
-        auto& y_true = *(y_test[i]);
-        auto pred = predict(epic, x);
-        if (argmax(pred) == argmax(y_true)) {
-            correct += 1;
-        }
+    std::vector<NNMatrixPtr> preds;
+    preds.reserve(x_test.size());
+    for (size_t i = 0; i < x_test.size(); ++i) {
+        auto pred = std::make_shared<NNMatrix>(predict(epic, x_test[i]));
+        preds.push_back(std::move(pred));
     }
-    return (float) correct / x_test.size();
+    return batchAccuracy(preds, y_test);
 }
 
 NNMatrix DNN::predict(int epic, NNMatrixPtr x) {

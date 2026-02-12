@@ -14,9 +14,8 @@ class CNNConfigBuilder {
         return *this;
     }
 
-    CNNConfigBuilder& addMaxPooling(int inputSize, int outputSize, int kernelSize, int stride) {
-        configs_.push_back(
-            std::make_shared<PoolingLayerConfig>(inputSize, outputSize, kernelSize, stride));
+    CNNConfigBuilder& addMaxPooling(int kernelSize, int stride) {
+        configs_.push_back(std::make_shared<MaxPoolingLayerConfig>(kernelSize, stride));
         return *this;
     }
 

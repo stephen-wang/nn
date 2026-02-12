@@ -3,9 +3,8 @@
 #include <stdexcept>
 #include <utility>
 
-NNDataset::NNDataset(std::string datasetLabel, NNMatrixPtrVector trainInput,
-                     NNMatrixPtrVector trainLabel, NNMatrixPtrVector testInput,
-                     NNMatrixPtrVector testLabel)
+NNDataset::NNDataset(std::string datasetLabel, NNMatrixPtrV trainInput, NNMatrixPtrV trainLabel,
+                     NNMatrixPtrV testInput, NNMatrixPtrV testLabel)
     : datasetLabel_(std::move(datasetLabel)), trainInput_(std::move(trainInput)),
       trainLabel_(std::move(trainLabel)), testInput_(std::move(testInput)),
       testLabel_(std::move(testLabel)) {

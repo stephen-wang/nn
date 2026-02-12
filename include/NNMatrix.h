@@ -28,11 +28,20 @@ class NNMatrix : public std::enable_shared_from_this<NNMatrix> {
     NNMatrix& operator*=(float ratio);
     NNMatrix& operator=(const NNMatrix& other);
     NNMatrix& operator=(NNMatrix&& other) noexcept;
+    NNMatrix& flatten() noexcept;
     NNMatrix dotProduct(const NNMatrix& other);
     NNMatrix elementProduct(const NNMatrix& other);
     NNMatrix applyFunction(const MatrixFunc& func);
+
     int getIndexOfColMax(int col) const;
     float getColMax(int col) const;
+
+    // Returns the maximum value within a square region starting at (i, j).
+    // - (i, j) is the top-left element (row, col).
+    // - The requested region size is stride x stride.
+    // - If the region exceeds matrix bounds, it is clamped to the valid area.
+    // Preconditions: stride > 0, 0 <= i < row, 0 <= j < col.
+    float getRegionMax(int i, int j, int stride);
     void dump(bool showFullLine = false, int lineSize = -1, bool dumpToFile = false) const;
     void toOneHot();
 
@@ -48,4 +57,5 @@ class NNMatrix : public std::enable_shared_from_this<NNMatrix> {
 };
 
 using NNMatrixPtr = std::shared_ptr<NNMatrix>;
-using NNMatrixPtrVector = std::vector<NNMatrixPtr>;
+using NNMatrixPtrV = std::vector<NNMatrixPtr>;
+using NNMatrixPtrVV = std::vector<NNMatrixPtrV>;

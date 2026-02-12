@@ -6,7 +6,7 @@ struct GLFWwindow;
 struct ImDrawList;
 struct ImVec2;
 
-class NNGuiUtils {
+class DNNGuiUtils {
   public:
     static int RunTrainingGui();
 

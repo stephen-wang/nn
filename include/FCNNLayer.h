@@ -10,6 +10,7 @@ class FCNNLayer : public NNLayer { // fully connecter neural network layer
     FCNNLayer(int inputSize = 1, int outputSize = 1);
     NNMatrix forward(const NNMatrix& input, MatrixFunc derivateFunc = NNFunctions::SigmoidDrevative,
                      bool debug = false);
+    NNMatrixPtrV forward(const NNMatrixPtrV& input);
     NNMatrix calculatePrevLayerDA(const NNMatrix& dz);
     NNMatrix setDz(NNMatrix&& other);
     void update(const NNMatrix& dw, const NNMatrix& db, float alpha, float momentum);

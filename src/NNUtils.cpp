@@ -5,7 +5,16 @@
 #include <chrono>
 #include <cmath>
 #include <fstream>
+#include <numeric>
 #include <random>
+
+namespace {
+std::mt19937& rng() {
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    return gen;
+}
+} // namespace
 
 const std::string NNUtils::TAG = "NNUtils";
 uint32_t NNUtils::swap_endian(uint32_t val) {
@@ -114,26 +123,6 @@ float NNUtils::random(float a, float b) {
     return dist(gen);
 }
 
-void NNUtils::shuffle(std::vector<NNMatrixPtr>& input, std::vector<NNMatrixPtr>& label) {
-    assert(input.size() == label.size());
-
-    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-    std::mt19937 gen(seed); // Mersenne Twister engine
-
-    std::vector<std::pair<NNMatrixPtr, NNMatrixPtr>> combinedData;
-    for (int i = 0; i < input.size(); i++) {
-        combinedData.push_back(std::make_pair(input[i], label[i]));
-    }
-    std::shuffle(combinedData.begin(), combinedData.end(), gen);
-
-    input.clear();
-    label.clear();
-    for (auto& data : combinedData) {
-        input.push_back(data.first);
-        label.push_back(data.second);
-    }
-}
-
 std::vector<NNMatrixPtr> NNUtils::getBatch(std::vector<NNMatrixPtr>& input, int batchNo,
                                            int batchSize) {
     std::vector<NNMatrixPtr> ret;
@@ -153,4 +142,145 @@ std::vector<NNMatrixPtr> NNUtils::getBatch(std::vector<NNMatrixPtr>& input, int 
     ret.insert(ret.end(), input.begin() + start, input.begin() + end);
 
     return ret;
+}
+
+NNMatrixPtr NNUtils::flattenAndConcat(const NNMatrixPtrV& mats) {
+    if (mats.empty()) {
+        return nullptr;
+    }
+
+    int total = 0;
+    for (const auto& m : mats) {
+        if (!m) {
+            return nullptr;
+        }
+        const int r = m->getRowSize();
+        const int c = m->getColSize();
+        if (r <= 0 || c <= 0) {
+            return nullptr;
+        }
+        total += r * c;
+    }
+    if (total <= 0) {
+        return nullptr;
+    }
+
+    auto flat = std::make_shared<NNMatrix>(total, 1);
+    float* out = flat->data();
+    if (!out) {
+        return nullptr;
+    }
+
+    int offset = 0;
+    for (const auto& m : mats) {
+        const float* in = m->data();
+        const int len = m->getRowSize() * m->getColSize();
+        if (!in || len <= 0) {
+            return nullptr;
+        }
+        std::copy(in, in + len, out + offset);
+        offset += len;
+    }
+
+    return flat;
+}
+
+void NNUtils::shuffle(std::vector<NNMatrixPtr>& input, std::vector<NNMatrixPtr>& label) {
+    const size_t n = input.size();
+    if (n == 0) {
+        return;
+    }
+    if (label.size() != n) {
+        LOG << "shuffle: input size " << input.size() << " != label size " << label.size();
+        return;
+    }
+
+    std::vector<size_t> indices(n);
+    std::iota(indices.begin(), indices.end(), 0);
+    std::shuffle(indices.begin(), indices.end(), rng());
+
+    std::vector<NNMatrixPtr> shuffledInput;
+    std::vector<NNMatrixPtr> shuffledLabel;
+    shuffledInput.reserve(n);
+    shuffledLabel.reserve(n);
+
+    for (size_t i = 0; i < n; ++i) {
+        const size_t idx = indices[i];
+        shuffledInput.push_back(input[idx]);
+        shuffledLabel.push_back(label[idx]);
+    }
+
+    input.swap(shuffledInput);
+    label.swap(shuffledLabel);
+}
+
+NNUtils::ShuffleSampleInfo NNUtils::shuffleSamples(std::vector<NNMatrixPtr>& input,
+                                                   std::vector<NNMatrixPtr>& label) {
+    const int dataCount = static_cast<int>(input.size());
+    const int labelCount = static_cast<int>(label.size());
+
+    ShuffleSampleInfo info;
+    info.sampleCount = labelCount;
+
+    if (labelCount > 0 && dataCount > 0 && (dataCount % labelCount) == 0) {
+        info.inChannelSize = dataCount / labelCount;
+    } else {
+        info.inChannelSize = 1;
+    }
+    if (info.inChannelSize <= 0) {
+        info.inChannelSize = 1;
+    }
+
+    if (info.sampleCount <= 0 && dataCount > 0) {
+        // Best-effort fallback; training without labels isn't meaningful but avoid UB.
+        info.sampleCount = dataCount / info.inChannelSize;
+    }
+
+    if (info.sampleCount > 0 && dataCount != info.sampleCount * info.inChannelSize) {
+        LOG << "shuffleSamples size mismatch: input=" << dataCount << ", label=" << labelCount
+            << ", inferred channels=" << info.inChannelSize << ". Falling back to channelSize=1.";
+        info.inChannelSize = 1;
+        info.sampleCount = labelCount;
+    }
+
+    if (dataCount == 0 || info.sampleCount <= 0) {
+        return info;
+    }
+
+    // Single-channel samples can use the standard paired shuffle.
+    if (info.inChannelSize == 1 && !label.empty()) {
+        shuffle(input, label);
+        return info;
+    }
+
+    // Shuffle by sample index, keeping per-sample channels contiguous.
+    std::vector<int> indices(info.sampleCount);
+    std::iota(indices.begin(), indices.end(), 0);
+    std::shuffle(indices.begin(), indices.end(), rng());
+
+    std::vector<NNMatrixPtr> shuffledData;
+    shuffledData.reserve(static_cast<size_t>(info.sampleCount * info.inChannelSize));
+
+    std::vector<NNMatrixPtr> shuffledLabel;
+    if (!label.empty()) {
+        shuffledLabel.reserve(static_cast<size_t>(info.sampleCount));
+    }
+
+    for (int dstSample = 0; dstSample < info.sampleCount; ++dstSample) {
+        const int srcSample = indices[dstSample];
+        const int base = srcSample * info.inChannelSize;
+        for (int c = 0; c < info.inChannelSize; ++c) {
+            shuffledData.push_back(input[base + c]);
+        }
+        if (!label.empty()) {
+            shuffledLabel.push_back(label[srcSample]);
+        }
+    }
+
+    input.swap(shuffledData);
+    if (!label.empty()) {
+        label.swap(shuffledLabel);
+    }
+
+    return info;
 }

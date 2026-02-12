@@ -3,7 +3,8 @@
 #include <iostream>
 
 #if defined(NN_ENABLE_GUI)
-#include "NNGuiUtils.h"
+#include "CNNGuiUtils.h"
+#include "DNNGuiUtils.h"
 #endif
 
 int ArgHelper::maybeRunGui(ModelType modelType) const {
@@ -15,14 +16,12 @@ int ArgHelper::maybeRunGui(ModelType modelType) const {
         false;
 #endif
 
-const bool requestGui = guiRequested(defaultGui);
+    const bool requestGui = guiRequested(defaultGui);
     if (requestGui) {
         if (modelType == ModelType::CNN) {
-            std::cerr << "GUI currently supports DNN only. Run without --gui or use --model dnn.";
-            std::cerr << std::endl;
-            return 2;
+            return CNNGuiUtils::RunTrainingGui();
         }
-        return NNGuiUtils::RunTrainingGui();
+        return DNNGuiUtils::RunTrainingGui();
     }
 
     return -1;

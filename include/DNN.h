@@ -1,6 +1,7 @@
 #pragma once
 
 #include "FCNNLayer.h"
+#include "NN.h"
 #include "NNDataset.h"
 
 #include <cstdint>
@@ -8,7 +9,7 @@
 #include <string>
 #include <vector>
 
-class DNN { // Simple Deep Neural Network
+class DNN : public NN { // Simple Deep Neural Network
   private:
     const std::string TAG = "DNN";
 
@@ -37,7 +38,6 @@ class DNN { // Simple Deep Neural Network
                   float learningRate, float momentum, int epic, int batchNo,
                   LayerCallback layerCallback);
     float loss(std::vector<NNMatrixPtr>& Y);
-    float calculateCrossEntropyLoss(const NNMatrix& actual, const NNMatrix& expect);
     NNMatrix calculateDW(const NNMatrix& input, const NNMatrix& dz);
     float accuracy(int epic, const std::vector<NNMatrixPtr>& x_test,
                    const std::vector<NNMatrixPtr>& y_test);

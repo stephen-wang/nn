@@ -13,22 +13,23 @@ static const char* MNIST_TRAIN_LABEL_FILE = "dataset/mnist/train-labels-idx1-uby
 static const char* MNISt_TEST_DATA_FILE = "dataset/mnist/t10k-images-idx3-ubyte";
 static const char* MNIST_TEST_LABEL_FILE = "dataset/mnist/t10k-labels-idx1-ubyte";
 
-static const char* CIFAR100_TRAIN_FILE = "dataset/cifar/cifar-100-binary/train.bin";
-static const char* CIFAR100_TEST_FILE = "dataset/cifar/cifar-100-binary/test.bin";
+static const char* CIFAR100_TRAIN_FILE = "dataset/cifar-100/cifar-100-binary/train.bin";
+static const char* CIFAR100_TEST_FILE = "dataset/cifar-100/cifar-100-binary/test.bin";
 static const char* CIFAR100_COARSE_LABEL_NAMES_FILE =
-    "dataset/cifar/cifar-100-binary/coarse_label_names.txt";
+    "dataset/cifar-100/cifar-100-binary/coarse_label_names.txt";
 static const char* CIFAR100_FINE_LABEL_NAMES_FILE =
-    "dataset/cifar/cifar-100-binary/fine_label_names.txt";
+    "dataset/cifar-100/cifar-100-binary/fine_label_names.txt";
 
 const std::string NNDatasetManager::TAG = "NNFunctions";
 
-void NNDatasetManager::readCifar100BinaryFile(const std::string& filePath, NNMatrixPtrVector& data,
-                                              NNMatrixPtrVector& labels) {
+void NNDatasetManager::readCifar100BinaryFile(const std::string& filePath, NNMatrixPtrV& data,
+                                              NNMatrixPtrV& labels) {
     // CIFAR-100 binary format:
     // 1 byte coarse label, 1 byte fine label, 3072 bytes image (32x32x3, channel-major)
     constexpr std::size_t kImageBytes = 32u * 32u * 3u;
     constexpr std::size_t kRecordBytes = 2u + kImageBytes;
-    constexpr int kInputSize = static_cast<int>(kImageBytes);
+    constexpr int kImageSide = 32;
+    constexpr int kChannelSize = kImageSide * kImageSide;
     constexpr int kNumClasses = 100;
 
     std::ifstream file(filePath, std::ios::binary);
@@ -49,7 +50,9 @@ void NNDatasetManager::readCifar100BinaryFile(const std::string& filePath, NNMat
     const std::size_t recordCount = fileSize / kRecordBytes;
     file.seekg(0, std::ios::beg);
 
-    data.reserve(recordCount);
+    // For CNN input we expose CIFAR-100 as 3 channel matrices (R,G,B) per sample.
+    // The stored input format is channel-major: 1024 R, 1024 G, 1024 B.
+    data.reserve(recordCount * 3);
     labels.reserve(recordCount);
 
     std::vector<unsigned char> buffer(kImageBytes);
@@ -66,9 +69,23 @@ void NNDatasetManager::readCifar100BinaryFile(const std::string& filePath, NNMat
 
         (void) coarse; // coarse label currently unused
 
-        auto input = std::make_shared<NNMatrix>(kInputSize, 1);
-        for (int j = 0; j < kInputSize; ++j) {
-            input->set(j, 0, static_cast<float>(buffer[static_cast<std::size_t>(j)]) / 255.0f);
+        auto r = std::make_shared<NNMatrix>(kImageSide, kImageSide);
+        auto g = std::make_shared<NNMatrix>(kImageSide, kImageSide);
+        auto b = std::make_shared<NNMatrix>(kImageSide, kImageSide);
+
+        for (int row = 0; row < kImageSide; ++row) {
+            for (int col = 0; col < kImageSide; ++col) {
+                const int idx = row * kImageSide + col;
+                r->set(row, col,
+                       static_cast<float>(buffer[static_cast<std::size_t>(idx)]) / 255.0f);
+                g->set(row, col,
+                       static_cast<float>(buffer[static_cast<std::size_t>(kChannelSize + idx)]) /
+                           255.0f);
+                b->set(
+                    row, col,
+                    static_cast<float>(buffer[static_cast<std::size_t>(2 * kChannelSize + idx)]) /
+                        255.0f);
+            }
         }
 
         if (fine >= kNumClasses) {
@@ -77,7 +94,9 @@ void NNDatasetManager::readCifar100BinaryFile(const std::string& filePath, NNMat
         auto label = std::make_shared<NNMatrix>(kNumClasses, 1);
         label->set(static_cast<int>(fine), 0, 1.0f);
 
-        data.push_back(std::move(input));
+        data.push_back(std::move(r));
+        data.push_back(std::move(g));
+        data.push_back(std::move(b));
         labels.push_back(std::move(label));
     }
 }
@@ -104,15 +123,15 @@ NNDataset NNDatasetManager::loadMnist() {
 }
 
 NNDataset NNDatasetManager::loadCifar100() {
-    NNMatrixPtrVector inputs, labels;
+    NNMatrixPtrV inputs, labels;
     LOG << "Read CIFAR-100 train data from " << CIFAR100_TRAIN_FILE;
     readCifar100BinaryFile(CIFAR100_TRAIN_FILE, inputs, labels);
-    LOG << "CIFAR-100 train samples: " << inputs.size();
+    LOG << "CIFAR-100 train data " << inputs.size() << ", total samples " << labels.size();
 
-    NNMatrixPtrVector testInputs, testLabels;
+    NNMatrixPtrV testInputs, testLabels;
     LOG << "Read CIFAR-100 test data from " << CIFAR100_TEST_FILE;
     readCifar100BinaryFile(CIFAR100_TEST_FILE, testInputs, testLabels);
-    LOG << "CIFAR-100 test samples: " << testInputs.size();
+    LOG << "CIFAR-100 test data: " << testInputs.size() << ", total samples " << testLabels.size();
 
     return {"cifar-100 dataset", std::move(inputs), std::move(labels), std::move(testInputs),
             std::move(testLabels)};

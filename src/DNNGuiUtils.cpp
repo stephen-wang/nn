@@ -1,4 +1,4 @@
-#include "NNGuiUtils.h"
+#include "DNNGuiUtils.h"
 
 #include "DNN.h"
 #include "NNDatasetManager.h"
@@ -33,7 +33,7 @@ const int BATCH_SIZE = 16;
 const float LEARNING_RATE = 0.005f;
 const float MOMENTUM = 0.9f;
 
-struct NNGuiUtils::TrainingStats {
+struct DNNGuiUtils::TrainingStats {
     std::vector<float> loss;
     std::vector<float> acc;
     std::mutex mutex;
@@ -53,7 +53,7 @@ struct NNGuiUtils::TrainingStats {
     std::atomic<bool> stop{false};
 };
 
-GLFWwindow* NNGuiUtils::initWindow() {
+GLFWwindow* DNNGuiUtils::initWindow() {
     if (!glfwInit()) {
         return nullptr;
     }
@@ -75,7 +75,7 @@ GLFWwindow* NNGuiUtils::initWindow() {
     return window;
 }
 
-void NNGuiUtils::startTraining(TrainingStats& stats) {
+void DNNGuiUtils::startTraining(TrainingStats& stats) {
     auto dataset = NNDatasetManager::loadMnist();
 
     std::vector<int> cfg{INPUT_SIZE, HIDDEN1_SIZE, HIDDEN2_SIZE, OUTPUT_SIZE};
@@ -148,7 +148,7 @@ void NNGuiUtils::startTraining(TrainingStats& stats) {
     stats.done.store(true);
 }
 
-void NNGuiUtils::drawInputImage(ImDrawList* drawList, const ImVec2& origin, const ImVec2& size,
+void DNNGuiUtils::drawInputImage(ImDrawList* drawList, const ImVec2& origin, const ImVec2& size,
                                 const std::vector<float>& image) {
     const int width = 28;
     const int height = 28;
@@ -379,7 +379,7 @@ static void drawDnnTopology(ImDrawList* drawList, const ImVec2& origin, const Im
     }
 }
 
-int NNGuiUtils::RunTrainingGui() {
+int DNNGuiUtils::RunTrainingGui() {
     GLFWwindow* window = initWindow();
     if (!window) {
         std::cerr << "Failed to initialize GLFW window" << std::endl;
