@@ -28,6 +28,17 @@ float NNUtils::xavierInit(int inputSize, int outputSize) {
     return NNUtils::random(-limit, limit);
 }
 
+float NNUtils::heInit(int fanIn) {
+    if (fanIn <= 0) {
+        return 0.0f;
+    }
+
+    // He uniform: Var = 2/fanIn, Uniform[-limit,limit] => Var = limit^2/3
+    // => limit = sqrt(6/fanIn).
+    const float limit = std::sqrt(6.0f / static_cast<float>(fanIn));
+    return NNUtils::random(-limit, limit);
+}
+
 void NNUtils::normalizeMnistData(std::vector<NNMatrixPtr>& data) {
     for (auto& inputPtr : data) {
         auto& input = *inputPtr;
@@ -195,23 +206,13 @@ void NNUtils::shuffle(std::vector<NNMatrixPtr>& input, std::vector<NNMatrixPtr>&
         return;
     }
 
-    std::vector<size_t> indices(n);
-    std::iota(indices.begin(), indices.end(), 0);
-    std::shuffle(indices.begin(), indices.end(), rng());
-
-    std::vector<NNMatrixPtr> shuffledInput;
-    std::vector<NNMatrixPtr> shuffledLabel;
-    shuffledInput.reserve(n);
-    shuffledLabel.reserve(n);
-
-    for (size_t i = 0; i < n; ++i) {
-        const size_t idx = indices[i];
-        shuffledInput.push_back(input[idx]);
-        shuffledLabel.push_back(label[idx]);
+    // In-place Fisher–Yates shuffle.
+    for (size_t i = n - 1; i > 0; --i) {
+        std::uniform_int_distribution<size_t> dist(0, i);
+        const size_t j = dist(rng());
+        std::swap(input[i], input[j]);
+        std::swap(label[i], label[j]);
     }
-
-    input.swap(shuffledInput);
-    label.swap(shuffledLabel);
 }
 
 NNUtils::ShuffleSampleInfo NNUtils::shuffleSamples(std::vector<NNMatrixPtr>& input,
@@ -253,33 +254,23 @@ NNUtils::ShuffleSampleInfo NNUtils::shuffleSamples(std::vector<NNMatrixPtr>& inp
         return info;
     }
 
-    // Shuffle by sample index, keeping per-sample channels contiguous.
-    std::vector<int> indices(info.sampleCount);
-    std::iota(indices.begin(), indices.end(), 0);
-    std::shuffle(indices.begin(), indices.end(), rng());
-
-    std::vector<NNMatrixPtr> shuffledData;
-    shuffledData.reserve(static_cast<size_t>(info.sampleCount * info.inChannelSize));
-
-    std::vector<NNMatrixPtr> shuffledLabel;
-    if (!label.empty()) {
-        shuffledLabel.reserve(static_cast<size_t>(info.sampleCount));
-    }
-
-    for (int dstSample = 0; dstSample < info.sampleCount; ++dstSample) {
-        const int srcSample = indices[dstSample];
-        const int base = srcSample * info.inChannelSize;
-        for (int c = 0; c < info.inChannelSize; ++c) {
-            shuffledData.push_back(input[base + c]);
+    // In-place Fisher–Yates shuffle by sample, keeping per-sample channels contiguous.
+    // Each sample occupies a contiguous block of `inChannelSize` matrices in `input`.
+    const int ch = info.inChannelSize;
+    for (int s = info.sampleCount - 1; s > 0; --s) {
+        std::uniform_int_distribution<int> dist(0, s);
+        const int j = dist(rng());
+        if (j == s) {
+            continue;
         }
         if (!label.empty()) {
-            shuffledLabel.push_back(label[srcSample]);
+            std::swap(label[static_cast<size_t>(s)], label[static_cast<size_t>(j)]);
         }
-    }
-
-    input.swap(shuffledData);
-    if (!label.empty()) {
-        label.swap(shuffledLabel);
+        const int baseS = s * ch;
+        const int baseJ = j * ch;
+        for (int c = 0; c < ch; ++c) {
+            std::swap(input[static_cast<size_t>(baseS + c)], input[static_cast<size_t>(baseJ + c)]);
+        }
     }
 
     return info;

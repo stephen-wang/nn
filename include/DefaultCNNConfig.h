@@ -35,11 +35,10 @@ const int CIFAR100_CNN_OUTPUT_SIZE = 100;
 
 const int CIFAR100_CNN_EPOCHS = 9;
 const int CIFAR100_CNN_BATCH_SIZE = 64;
-const float CIFAR100_CNN_LEARNING_RATE = 0.01f;
+const float CIFAR100_CNN_LEARNING_RATE = 0.02f;
 const float CIFAR100_CNN_MOMENTUM = 0.9f;
 
-// Practical defaults: the current CNN training loop does forward+loss only (backward is disabled),
-// so running the full CIFAR-100 set is very slow with no learning. Keep the default run small;
-// increase these (or set to <=0) once backprop is implemented.
-const int CIFAR100_CNN_MAX_TRAIN_SAMPLES = 20000;
+// Practical defaults: CNN training is CPU-heavy; keep the default run small to iterate faster.
+// Increase these (or set to <=0) for full-dataset training.
+const int CIFAR100_CNN_MAX_TRAIN_SAMPLES = 50000;
 const int CIFAR100_CNN_MAX_TEST_SAMPLES = 10000;

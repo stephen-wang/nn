@@ -52,6 +52,9 @@ class NNUtils {
 
     static float random(float a, float b);
     static float xavierInit(int inputSize, int outputSize);
+    // He/Kaiming uniform init for ReLU-family activations.
+    // fanIn should be the number of input units to the layer/neuron.
+    static float heInit(int fanIn);
     static void normalizeMnistData(std::vector<NNMatrixPtr>& data);
     static void normalizeMnistLabel(std::vector<NNMatrixPtr>& labels);
 };

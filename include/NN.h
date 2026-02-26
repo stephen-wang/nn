@@ -41,13 +41,16 @@ class NN {
         }
 
         float totalLoss = 0.0f;
+        int valid = 0;
         for (size_t i = 0; i < expect.size(); ++i) {
             if (!actual[i] || !expect[i]) {
                 continue;
             }
             totalLoss += crossEntropyLoss(*actual[i], *expect[i]);
+            valid += 1;
         }
-        return totalLoss / static_cast<float>(expect.size());
+
+        return valid > 0 ? (totalLoss / static_cast<float>(valid)) : 0.0f;
     }
 
     static float batchAccuracy(const std::vector<NNMatrixPtr>& actual,
@@ -57,16 +60,18 @@ class NN {
         }
 
         int correct = 0;
+        int valid = 0;
         for (size_t i = 0; i < expect.size(); ++i) {
             if (!actual[i] || !expect[i]) {
                 continue;
             }
+            valid += 1;
             if (argmax(*actual[i]) == argmax(*expect[i])) {
                 correct += 1;
             }
         }
 
-        return static_cast<float>(correct) / static_cast<float>(expect.size());
+        return valid > 0 ? (static_cast<float>(correct) / static_cast<float>(valid)) : 0.0f;
     }
 
   public:

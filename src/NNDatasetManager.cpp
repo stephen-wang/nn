@@ -8,6 +8,13 @@
 #include <utility>
 #include <vector>
 
+namespace {
+inline float normalizeCifarByte(unsigned char v) {
+    // Map [0,255] -> [-1,1]. Equivalent to: (v/255 - 0.5) / 0.5.
+    return static_cast<float>(v) / 127.5f - 1.0f;
+}
+} // namespace
+
 static const char* MNIST_TRAIN_DATA_FILE = "dataset/mnist/train-images-idx3-ubyte";
 static const char* MNIST_TRAIN_LABEL_FILE = "dataset/mnist/train-labels-idx1-ubyte";
 static const char* MNISt_TEST_DATA_FILE = "dataset/mnist/t10k-images-idx3-ubyte";
@@ -76,15 +83,16 @@ void NNDatasetManager::readCifar100BinaryFile(const std::string& filePath, NNMat
         for (int row = 0; row < kImageSide; ++row) {
             for (int col = 0; col < kImageSide; ++col) {
                 const int idx = row * kImageSide + col;
-                r->set(row, col,
-                       static_cast<float>(buffer[static_cast<std::size_t>(idx)]) / 255.0f);
-                g->set(row, col,
-                       static_cast<float>(buffer[static_cast<std::size_t>(kChannelSize + idx)]) /
-                           255.0f);
-                b->set(
-                    row, col,
-                    static_cast<float>(buffer[static_cast<std::size_t>(2 * kChannelSize + idx)]) /
-                        255.0f);
+                // Normalize to approximately zero-mean range: [0,1] -> [-1,1].
+                // This is a lightweight alternative to per-channel mean/std normalization.
+                const float rf = normalizeCifarByte(buffer[static_cast<std::size_t>(idx)]);
+                const float gf =
+                    normalizeCifarByte(buffer[static_cast<std::size_t>(kChannelSize + idx)]);
+                const float bf =
+                    normalizeCifarByte(buffer[static_cast<std::size_t>(2 * kChannelSize + idx)]);
+                r->set(row, col, rf);
+                g->set(row, col, gf);
+                b->set(row, col, bf);
             }
         }
 

@@ -13,19 +13,19 @@
 static void startCnnTraining() {
     auto dataSet = NNDatasetManager::loadCifar100();
 
-    // By default, keep the run small (CNN backprop is currently disabled).
-    // if (CIFAR100_CNN_MAX_TRAIN_SAMPLES > 0 &&
-    //     static_cast<int>(dataSet.trainLabel_.size()) > CIFAR100_CNN_MAX_TRAIN_SAMPLES) {
-    //     dataSet.trainLabel_.resize(static_cast<size_t>(CIFAR100_CNN_MAX_TRAIN_SAMPLES));
-    //     dataSet.trainInput_.resize(static_cast<size_t>(CIFAR100_CNN_MAX_TRAIN_SAMPLES) *
-    //                                static_cast<size_t>(CIFAR100_CNN_IN_CHANNELS));
-    // }
-    // if (CIFAR100_CNN_MAX_TEST_SAMPLES > 0 &&
-    //     static_cast<int>(dataSet.testLabel_.size()) > CIFAR100_CNN_MAX_TEST_SAMPLES) {
-    //     dataSet.testLabel_.resize(static_cast<size_t>(CIFAR100_CNN_MAX_TEST_SAMPLES));
-    //     dataSet.testInput_.resize(static_cast<size_t>(CIFAR100_CNN_MAX_TEST_SAMPLES) *
-    //                               static_cast<size_t>(CIFAR100_CNN_IN_CHANNELS));
-    // }
+    // Keep the default CLI run reasonably small to iterate faster.
+    if (CIFAR100_CNN_MAX_TRAIN_SAMPLES > 0 &&
+        static_cast<int>(dataSet.trainLabel_.size()) > CIFAR100_CNN_MAX_TRAIN_SAMPLES) {
+        dataSet.trainLabel_.resize(static_cast<size_t>(CIFAR100_CNN_MAX_TRAIN_SAMPLES));
+        dataSet.trainInput_.resize(static_cast<size_t>(CIFAR100_CNN_MAX_TRAIN_SAMPLES) *
+                                   static_cast<size_t>(CIFAR100_CNN_IN_CHANNELS));
+    }
+    if (CIFAR100_CNN_MAX_TEST_SAMPLES > 0 &&
+        static_cast<int>(dataSet.testLabel_.size()) > CIFAR100_CNN_MAX_TEST_SAMPLES) {
+        dataSet.testLabel_.resize(static_cast<size_t>(CIFAR100_CNN_MAX_TEST_SAMPLES));
+        dataSet.testInput_.resize(static_cast<size_t>(CIFAR100_CNN_MAX_TEST_SAMPLES) *
+                                  static_cast<size_t>(CIFAR100_CNN_IN_CHANNELS));
+    }
 
     CNNConfigBuilder builder;
     auto configs =

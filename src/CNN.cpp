@@ -140,7 +140,14 @@ NNMatrixPtrV CNN::forward(int epoc, int batchNo, int inChannelSize, const NNMatr
             }
             case NNLayerType::FullyConnected: {
                 auto* fc = static_cast<FCNNLayer*>(layer.get());
-                auto flat = NNUtils::flattenAndConcat(cur);
+                NNMatrixPtr flat;
+                // Fast path: after the first FC, `cur` is already a single column vector.
+                if (cur.size() == 1 && cur[0] && cur[0]->getColSize() == 1 &&
+                    cur[0]->getRowSize() == fc->getInputSize()) {
+                    flat = cur[0];
+                } else {
+                    flat = NNUtils::flattenAndConcat(cur);
+                }
                 if (!flat) {
                     LOG << "CNN::forward failed to flatten/concat inputs for FC layer";
                     cur.clear();
@@ -525,14 +532,29 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
 void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningRate, float momentum,
                 TrainCallback callback, LayerCallback layerCallback, BatchCallback batchCallback,
                 StopCallback stopCallback, BatchStatsCallback batchStatsCallback) {
+    constexpr int kLogEveryNBatches = 50;
+
+    // Simple step LR schedule: decay by 10x at ~1/3 and ~2/3 of training.
+    // For short runs (e.g. 9 epochs), this prevents mid-run overshoot/decay in accuracy.
+    const int lrStep1 = std::max(1, epochNum / 3);
+    const int lrStep2 = std::max(lrStep1 + 1, (epochNum * 2) / 3);
+
     int e = 0;
     while (e < epochNum) {
         if (stopCallback && stopCallback()) {
             return;
         }
 
+        float curLearningRate = learningRate;
+        if (e >= lrStep2) {
+            curLearningRate *= 0.01f;
+        } else if (e >= lrStep1) {
+            curLearningRate *= 0.1f;
+        }
+
         LOG << "Epoc " << e << "/" << epochNum << ", trainData " << dataSet.trainInput_.size()
-            << ", trainLabel " << dataSet.trainLabel_.size() << std::endl;
+            << ", trainLabel " << dataSet.trainLabel_.size() << ", lr " << curLearningRate
+            << std::endl;
         auto& trainData = dataSet.trainInput_;
         auto& trainLabel = dataSet.trainLabel_;
 
@@ -542,6 +564,12 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
 
         int numBatches = NNUtils::ceilDiv(sampleCount, batchSize);
         float epochLoss = 0.0f;
+
+        std::vector<NNMatrixPtr> batchX;
+        std::vector<NNMatrixPtr> batchY;
+        batchX.reserve(static_cast<size_t>(batchSize) * static_cast<size_t>(std::max(1, inChannelSize)));
+        batchY.reserve(static_cast<size_t>(batchSize));
+
         for (int b = 0; b < numBatches; b++) {
             if (stopCallback && stopCallback()) {
                 return;
@@ -552,8 +580,10 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
 
             const int startSample = b * batchSize;
             const int endSample = std::min(startSample + batchSize, sampleCount);
-            LOG << "Epoc " << e << ", batch " << b << " starts, startSample " << startSample
-                << ", endSample " << endSample << std::endl;
+            if (b % kLogEveryNBatches == 0) {
+                LOG << "Epoc " << e << ", batch " << b << " starts, startSample " << startSample
+                    << ", endSample " << endSample << std::endl;
+            }
             if (startSample >= endSample || endSample > sampleCount) {
                 LOG << "CNN::train: no data in current batch" << std::endl;
                 break;
@@ -562,10 +592,10 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
             const int batchSampleCount = endSample - startSample;
             const int expectedBatchXCount = batchSampleCount * inChannelSize;
 
-            std::vector<NNMatrixPtr> batchX;
-            std::vector<NNMatrixPtr> batchY;
-            batchX.reserve(expectedBatchXCount);
-            batchY.reserve(batchSampleCount);
+            batchX.clear();
+            batchY.clear();
+            batchX.reserve(static_cast<size_t>(expectedBatchXCount));
+            batchY.reserve(static_cast<size_t>(batchSampleCount));
 
             for (int i = startSample; i < endSample; ++i) {
                 const int base = i * inChannelSize;
@@ -608,7 +638,7 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
                 continue;
             }
 
-            LOG << "Epoc " << e << ", batch " << b << " forward starts";
+            // Avoid per-batch spam; forward/backward are the hot path.
             auto preds = forward(e, b, inChannelSize, batchX, layerCallback);
 
             const size_t expectedBatchXCountSz = size_t(batchSampleCount) * size_t(inChannelSize);
@@ -632,7 +662,9 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
             }
 
             float batchLoss = loss(batchY);
-            LOG << "Batch loss " << batchLoss << std::endl;
+            if (b % kLogEveryNBatches == 0) {
+                LOG << "Batch loss " << batchLoss << std::endl;
+            }
             epochLoss += batchLoss;
 
             if (batchStatsCallback) {
@@ -657,8 +689,7 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
                                    batchAcc);
             }
 
-            LOG << "Epoc " << e << ", batch " << b << " backward starts";
-            backward(batchX, batchY, learningRate, momentum, e, b, inChannelSize, layerCallback);
+            backward(batchX, batchY, curLearningRate, momentum, e, b, inChannelSize, layerCallback);
             if (layerCallback) {
                 layerCallback(e, b, -1, LayerPhase::Idle);
             }

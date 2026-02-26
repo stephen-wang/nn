@@ -31,13 +31,12 @@ ConvolutionLayer::ConvolutionLayer(const ConvolutionLayerConfig& config)
     const int filterNum = inChannelSize * outChannelSize;
     filters.reserve(filterNum);
     vFilters.reserve(filterNum);
-    int inputSize = inChannelSize * filterSize * filterSize;
-    int outputSize = outChannelSize * filterSize * filterSize;
+    const int fanIn = inChannelSize * filterSize * filterSize;
     for (int filterIdx = 0; filterIdx < filterNum; filterIdx++) {
         auto filter = std::make_shared<NNMatrix>(filterSize, filterSize);
         for (int r = 0; r < filterSize; r++) {
             for (int c = 0; c < filterSize; c++) {
-                filter->set(r, c, NNUtils::xavierInit(inputSize, outputSize));
+                filter->set(r, c, NNUtils::heInit(fanIn));
             }
         }
         filters.push_back(filter);
@@ -189,15 +188,22 @@ NNMatrixPtrV ConvolutionLayer::backward(const NNMatrixPtrV& inputs, const NNMatr
         const auto& outMap = outputs[oc];
         const auto& dOutMap = dOutputs[oc];
 
+        const float* outData = outMap ? outMap->data() : nullptr;
+        const float* dOutData = dOutMap ? dOutMap->data() : nullptr;
+        if (!outData || !dOutData) {
+            LOG << "ConvolutionLayer::backward null output/dOutput buffers";
+            return NNMatrixPtrV{};
+        }
+
         for (int outI = 0; outI < outH; ++outI) {
             const int inIBase = outI * stride;
             for (int outJ = 0; outJ < outW; ++outJ) {
                 const int inJBase = outJ * stride;
 
-                float grad = dOutMap->get(outI, outJ);
-                // Backprop through ReLU (approx using activated output, like python uses
-                // conv_out>0)
-                if (outMap->get(outI, outJ) <= 0.0f) {
+                const int outIdx = outI * outW + outJ;
+                float grad = dOutData[outIdx];
+                // Backprop through ReLU (approx using activated output).
+                if (outData[outIdx] <= 0.0f) {
                     grad = 0.0f;
                 }
                 if (grad == 0.0f) {
@@ -205,6 +211,14 @@ NNMatrixPtrV ConvolutionLayer::backward(const NNMatrixPtrV& inputs, const NNMatr
                 }
 
                 gradBias[oc] += grad;
+
+                const int mStart = std::max(0, -inIBase);
+                const int mEnd = std::min(filterSize, padH - inIBase);
+                const int nStart = std::max(0, -inJBase);
+                const int nEnd = std::min(filterSize, padW - inJBase);
+                if (mStart >= mEnd || nStart >= nEnd) {
+                    continue;
+                }
 
                 for (int ic = 0; ic < inChannelSize; ++ic) {
                     const size_t filterIdx = ic * outChannelSize + oc;
@@ -218,16 +232,23 @@ NNMatrixPtrV ConvolutionLayer::backward(const NNMatrixPtrV& inputs, const NNMatr
                     const auto& padIn = padInputs[ic];
                     auto& dPadIn = dPadInputs[ic];
 
-                    for (int m = 0; m < filterSize; ++m) {
-                        for (int n = 0; n < filterSize; ++n) {
-                            const int inI = inIBase + m;
-                            const int inJ = inJBase + n;
-                            if (inI < 0 || inJ < 0 || inI >= padH || inJ >= padW) {
-                                continue;
-                            }
+                    const float* padInData = padIn ? padIn->data() : nullptr;
+                    const float* filterData = filter->data();
+                    float* dFilterData = dFilter->data();
+                    float* dPadData = dPadIn ? dPadIn->data() : nullptr;
+                    if (!padInData || !filterData || !dFilterData || !dPadData) {
+                        LOG << "ConvolutionLayer::backward null data buffers";
+                        return NNMatrixPtrV{};
+                    }
 
-                            dFilter->set(m, n, dFilter->get(m, n) + padIn->get(inI, inJ) * grad);
-                            dPadIn->set(inI, inJ, dPadIn->get(inI, inJ) + filter->get(m, n) * grad);
+                    for (int m = mStart; m < mEnd; ++m) {
+                        const int inRowBase = (inIBase + m) * padW + inJBase;
+                        const int filterBase = m * filterSize;
+                        for (int n = nStart; n < nEnd; ++n) {
+                            const int inIdx = inRowBase + n;
+                            const int fIdx = filterBase + n;
+                            dFilterData[fIdx] += padInData[inIdx] * grad;
+                            dPadData[inIdx] += filterData[fIdx] * grad;
                         }
                     }
                 }
@@ -240,10 +261,17 @@ NNMatrixPtrV ConvolutionLayer::backward(const NNMatrixPtrV& inputs, const NNMatr
     for (int ic = 0; ic < inChannelSize; ++ic) {
         auto dIn = std::make_shared<NNMatrix>(inputH, inputW, 0.0f);
         const auto& dPad = dPadInputs[static_cast<size_t>(ic)];
+        float* dInData = dIn ? dIn->data() : nullptr;
+        const float* dPadData = dPad ? dPad->data() : nullptr;
+        if (!dInData || !dPadData) {
+            LOG << "ConvolutionLayer::backward null crop buffers";
+            return NNMatrixPtrV{};
+        }
+
         for (int i = 0; i < inputH; ++i) {
-            for (int j = 0; j < inputW; ++j) {
-                dIn->set(i, j, dPad->get(i + padding, j + padding));
-            }
+            const float* src = dPadData + (i + padding) * padW + padding;
+            float* dst = dInData + i * inputW;
+            std::memcpy(dst, src, static_cast<size_t>(inputW) * sizeof(float));
         }
         dInputs.push_back(std::move(dIn));
     }
@@ -297,33 +325,68 @@ NNMatrixPtrV ConvolutionLayer::forward(const NNMatrixPtrV& inputs) {
         return ret;
     }
 
+    // Pre-pad each input channel once. The previous implementation padded inside `convolve()` for
+    // every (inChannel,outChannel) pair, which causes massive repeated allocations/copies.
+    NNMatrixPtrV padInputs;
+    padInputs.reserve(static_cast<size_t>(inChannelSize));
+    for (int ic = 0; ic < inChannelSize; ++ic) {
+        auto in = inputs[static_cast<size_t>(ic)];
+        if (padding > 0) {
+            in = zeroPad(in);
+        }
+        if (!in) {
+            LOG << "ConvolutionLayer::forward failed to pad input";
+            return NNMatrixPtrV{};
+        }
+        padInputs.push_back(std::move(in));
+    }
+
+    const int padRowSize = padInputs[0]->getRowSize();
+    const int padColSize = padInputs[0]->getColSize();
+    const int outRowSize = NNUtils::ceilDiv(padRowSize - filterSize + 1, stride);
+    const int outColSize = NNUtils::ceilDiv(padColSize - filterSize + 1, stride);
+    if (outRowSize <= 0 || outColSize <= 0) {
+        LOG << "ConvolutionLayer::forward invalid output size " << outRowSize << "x" << outColSize;
+        return NNMatrixPtrV{};
+    }
+
     ret.reserve(outChannelSize);
     for (int outChannel = 0; outChannel < outChannelSize; outChannel++) {
-        NNMatrixPtr outMap;
+        auto outMap = std::make_shared<NNMatrix>(outRowSize, outColSize, 0.0f);
+        float* outAcc = outMap ? outMap->data() : nullptr;
+        if (!outAcc) {
+            LOG << "ConvolutionLayer::forward null output buffer";
+            return NNMatrixPtrV{};
+        }
 
         for (int inChannel = 0; inChannel < inChannelSize; inChannel++) {
             auto& filter = filters[inChannel * outChannelSize + outChannel];
-            auto convResult = convolve(inputs[inChannel], filter);
-            if (!convResult) {
-                LOG << "Convolution failed at inChannel=" << inChannel
-                    << ", outChannel=" << outChannel;
-                ret.clear();
-                return ret;
+            if (!filter) {
+                LOG << "ConvolutionLayer::forward null filter";
+                return NNMatrixPtrV{};
             }
 
-            if (!outMap) {
-                outMap = std::make_shared<NNMatrix>(*convResult);
-            } else {
-                if (outMap->getRowSize() != convResult->getRowSize() ||
-                    outMap->getColSize() != convResult->getColSize()) {
-                    LOG << "Convolution result size mismatch for outChannel=" << outChannel
-                        << ": expected " << outMap->getRowSize() << "x" << outMap->getColSize()
-                        << ", actual " << convResult->getRowSize() << "x"
-                        << convResult->getColSize();
-                    ret.clear();
-                    return ret;
+            // Convolve using the already padded input.
+            const auto& padIn = padInputs[static_cast<size_t>(inChannel)];
+            const float* inData = padIn ? padIn->data() : nullptr;
+            const float* filterData = filter->data();
+            if (!padIn || !inData || !filterData) {
+                LOG << "ConvolutionLayer::forward null input/filter data";
+                return NNMatrixPtrV{};
+            }
+
+            for (int outI = 0, i = 0; outI < outRowSize; ++outI, i += stride) {
+                for (int outJ = 0, j = 0; outJ < outColSize; ++outJ, j += stride) {
+                    float sum = 0.0f;
+                    for (int m = 0; m < filterSize; ++m) {
+                        const int inBase = (i + m) * padColSize + j;
+                        const int filterBase = m * filterSize;
+                        for (int n = 0; n < filterSize; ++n) {
+                            sum += inData[inBase + n] * filterData[filterBase + n];
+                        }
+                    }
+                    outAcc[outI * outColSize + outJ] += sum;
                 }
-                *outMap += *convResult;
             }
         }
 

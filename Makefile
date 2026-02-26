@@ -9,6 +9,7 @@ TEST_DIR = test
 SRC_DIR = src
 INC_DIR = include
 CXXFLAGS = -std=c++17 -Wall -g -I$(INC_DIR) -Ithird_party
+RELEASE_CXXFLAGS = -std=c++17 -Wall -O3 -DNDEBUG -I$(INC_DIR) -Ithird_party
 TESTFLAGS =  -I$(GETST_LIB_INC) -L$(GTEST_LIB_PATH) $(GTEST_LIBS) -pthread
 TARGET = nn
 TEST_TARGET = nn_test
@@ -39,6 +40,9 @@ all: $(TARGET) clean
 
 $(TARGET): $(MAIN_SRCS)
 	$(CXX) $(CXXFLAGS) -o $@ $^
+
+nn_release: $(MAIN_SRCS)
+	$(CXX) $(RELEASE_CXXFLAGS) -o $(TARGET) $^
 
 $(GUI_TARGET): $(GUI_SRCS) $(IMGUI_SRCS) 
 	$(CXX) $(GUI_CXXFLAGS) -I$(GLFW_LIB_INC) -I$(IMGUI_DIR) -I$(IMGUI_BACKENDS) $(GUI_LIBS) -o $@ $^
