@@ -7,23 +7,31 @@
 #include "NNDatasetManager.h"
 #include "NNUtils.h"
 
+#include <algorithm>
 #include <iostream>
 #include <vector>
 
-static void startCnnTraining() {
+static void startCnnTraining(const ArgHelper& argHelper) {
     auto dataSet = NNDatasetManager::loadCifar100();
 
+    const int epochs = std::max(1, argHelper.intValue("--epochs", CIFAR100_CNN_EPOCHS));
+    const int batchSize = std::max(1, argHelper.intValue("--batch-size", CIFAR100_CNN_BATCH_SIZE));
+    const float lr = argHelper.floatValue("--learning-rate", CIFAR100_CNN_LEARNING_RATE);
+    const float momentum = argHelper.floatValue("--momentum", CIFAR100_CNN_MOMENTUM);
+    const float weightDecay = argHelper.floatValue("--weight-decay", CIFAR100_CNN_WEIGHT_DECAY);
+
+    const int maxTrain = argHelper.intValue("--max-train-samples", CIFAR100_CNN_MAX_TRAIN_SAMPLES);
+    const int maxTest = argHelper.intValue("--max-test-samples", CIFAR100_CNN_MAX_TEST_SAMPLES);
+
     // Keep the default CLI run reasonably small to iterate faster.
-    if (CIFAR100_CNN_MAX_TRAIN_SAMPLES > 0 &&
-        static_cast<int>(dataSet.trainLabel_.size()) > CIFAR100_CNN_MAX_TRAIN_SAMPLES) {
-        dataSet.trainLabel_.resize(static_cast<size_t>(CIFAR100_CNN_MAX_TRAIN_SAMPLES));
-        dataSet.trainInput_.resize(static_cast<size_t>(CIFAR100_CNN_MAX_TRAIN_SAMPLES) *
+    if (maxTrain > 0 && static_cast<int>(dataSet.trainLabel_.size()) > maxTrain) {
+        dataSet.trainLabel_.resize(static_cast<size_t>(maxTrain));
+        dataSet.trainInput_.resize(static_cast<size_t>(maxTrain) *
                                    static_cast<size_t>(CIFAR100_CNN_IN_CHANNELS));
     }
-    if (CIFAR100_CNN_MAX_TEST_SAMPLES > 0 &&
-        static_cast<int>(dataSet.testLabel_.size()) > CIFAR100_CNN_MAX_TEST_SAMPLES) {
-        dataSet.testLabel_.resize(static_cast<size_t>(CIFAR100_CNN_MAX_TEST_SAMPLES));
-        dataSet.testInput_.resize(static_cast<size_t>(CIFAR100_CNN_MAX_TEST_SAMPLES) *
+    if (maxTest > 0 && static_cast<int>(dataSet.testLabel_.size()) > maxTest) {
+        dataSet.testLabel_.resize(static_cast<size_t>(maxTest));
+        dataSet.testInput_.resize(static_cast<size_t>(maxTest) *
                                   static_cast<size_t>(CIFAR100_CNN_IN_CHANNELS));
     }
 
@@ -55,17 +63,19 @@ static void startCnnTraining() {
             .build();
 
     auto cnn = CNN(configs);
-    cnn.train(dataSet, CIFAR100_CNN_EPOCHS, CIFAR100_CNN_BATCH_SIZE, CIFAR100_CNN_LEARNING_RATE,
-              CIFAR100_CNN_MOMENTUM, CIFAR100_CNN_WEIGHT_DECAY);
+    cnn.train(dataSet, epochs, batchSize, lr, momentum, weightDecay);
 }
 
-static void startDnnTraining() {
+static void startDnnTraining(const ArgHelper& argHelper) {
     auto dataSet = NNDatasetManager::loadMnist();
+    const int epochs = std::max(1, argHelper.intValue("--epochs", DEFAULT_DNN_EPOCHS));
+    const int batchSize = std::max(1, argHelper.intValue("--batch-size", DEFAULT_DNN_BATCH_SIZE));
+    const float lr = argHelper.floatValue("--learning-rate", DEFAULT_DNN_LEARNING_RATE);
+    const float momentum = argHelper.floatValue("--momentum", DEFAULT_DNN_MOMENTUM);
     std::vector<int> cfg{DEFAULT_DNN_INPUT_SIZE, DEFAULT_DNN_HIDDEN1_SIZE, DEFAULT_DNN_HIDDEN2_SIZE,
                          DEFAULT_DNN_OUTPUT_SIZE};
     auto nn = DNN(cfg);
-    nn.train(dataSet, DEFAULT_DNN_EPOCHS, DEFAULT_DNN_BATCH_SIZE, DEFAULT_DNN_LEARNING_RATE,
-             DEFAULT_DNN_MOMENTUM, nullptr, nullptr, nullptr, nullptr);
+    nn.train(dataSet, epochs, batchSize, lr, momentum, nullptr, nullptr, nullptr, nullptr);
 }
 
 int main(int argc, char** argv) {
@@ -83,9 +93,9 @@ int main(int argc, char** argv) {
     }
 
     if (modelType == ModelType::DNN) {
-        startDnnTraining();
+        startDnnTraining(argHelper);
     } else {
-        startCnnTraining();
+        startCnnTraining(argHelper);
     }
 
     return 0;

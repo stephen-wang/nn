@@ -85,7 +85,6 @@ NNMatrix& NNMatrix::flatten() noexcept {
     row_ *= col_;
     col_ = 1;
     return *this;
-
 }
 
 NNVector NNMatrix::getRow(int row) const {
@@ -267,11 +266,25 @@ void NNMatrix::toOneHot() {
     if (mem_ == nullptr || row_ <= 0 || col_ <= 0) {
         return;
     }
-
     const int total = row_ * col_;
     constexpr float threshold = 1e-5f;
     for (int idx = 0; idx < total; idx++) {
         mem_[idx] = (mem_[idx] > threshold) ? 1.0f : 0.0f;
+    }
+}
+
+void NNMatrix::applyFunctionInplace(const MatrixFunc& func) {
+    if (!func) {
+        return;
+    }
+    if (mem_ == nullptr || row_ <= 0 || col_ <= 0) {
+        return;
+    }
+
+    const int total = row_ * col_;
+    float* dataPtr = mem_;
+    for (int idx = 0; idx < total; ++idx) {
+        dataPtr[idx] = func(dataPtr[idx]);
     }
 }
 

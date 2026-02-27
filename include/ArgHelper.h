@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdlib>
+#include <limits>
 #include <ostream>
 #include <string>
 #include <string_view>
@@ -39,6 +41,36 @@ class ArgHelper {
         return nullptr;
     }
 
+    int intValue(std::string_view key, int defaultValue) const {
+        const char* v = value(key);
+        if (!v) {
+            return defaultValue;
+        }
+        char* end = nullptr;
+        const long parsed = std::strtol(v, &end, 10);
+        if (!end || end == v) {
+            return defaultValue;
+        }
+        if (parsed < static_cast<long>(std::numeric_limits<int>::min()) ||
+            parsed > static_cast<long>(std::numeric_limits<int>::max())) {
+            return defaultValue;
+        }
+        return static_cast<int>(parsed);
+    }
+
+    float floatValue(std::string_view key, float defaultValue) const {
+        const char* v = value(key);
+        if (!v) {
+            return defaultValue;
+        }
+        char* end = nullptr;
+        const float parsed = std::strtof(v, &end);
+        if (!end || end == v) {
+            return defaultValue;
+        }
+        return parsed;
+    }
+
     bool helpRequested() const { return has("--help") || has("-h"); }
 
     bool cliRequested() const { return has("--cli"); }
@@ -76,6 +108,15 @@ class ArgHelper {
            << "  --model dnn|cnn  Select network type (default: dnn)\n"
            << "  --mode dnn|cnn   Alias for --model\n"
            << "  --dnn / --cnn    Short aliases for --model\n";
+
+        os << "\nTraining overrides (optional):\n"
+           << "  --epochs N\n"
+           << "  --batch-size N\n"
+           << "  --learning-rate F\n"
+           << "  --momentum F\n"
+           << "  --weight-decay F\n"
+           << "  --max-train-samples N\n"
+           << "  --max-test-samples N\n";
     }
 
     // Returns >= 0 when GUI handling is complete and main() should return that code.

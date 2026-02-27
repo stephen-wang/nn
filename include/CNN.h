@@ -20,6 +20,12 @@ class CNN : public NN { // Simple Convolutional Neural Network
     NNMatrixPtrVV fcLayerOutputs_;
     std::vector<NNMatrixPtrVV> layerOutputs_;
 
+    // Scratch buffers reused across batches to reduce allocation pressure.
+    // - `flatScratchBySample_`: flattened conv activations (input to first FC layer)
+    // - `dUnflattenScratchBySample_`: reshaped gradients (from first FC back into conv stack)
+    NNMatrixPtrV flatScratchBySample_;
+    std::vector<NNMatrixPtrV> dUnflattenScratchBySample_;
+
   public:
     CNN(const std::vector<CNNConfigPtr>& configs);
     virtual ~CNN() { layers.clear(); }

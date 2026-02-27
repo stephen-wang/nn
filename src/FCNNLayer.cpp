@@ -9,7 +9,7 @@ FCNNLayer::FCNNLayer(int inputSize, int outputSize)
       dz_(outputSize, 1) {
     for (int i = 0; i < outputSize; i++) {
         for (int j = 0; j < inputSize; j++) {
-                        weight.set(i, j, NNUtils::heInit(inputSize));
+            weight.set(i, j, NNUtils::heInit(inputSize));
         }
 
         bias.set(i, 0, 0.0f);

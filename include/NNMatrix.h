@@ -32,6 +32,7 @@ class NNMatrix : public std::enable_shared_from_this<NNMatrix> {
     NNMatrix dotProduct(const NNMatrix& other);
     NNMatrix elementProduct(const NNMatrix& other);
     NNMatrix applyFunction(const MatrixFunc& func);
+    void applyFunctionInplace(const MatrixFunc& func);
 
     int getIndexOfColMax(int col) const;
     float getColMax(int col) const;

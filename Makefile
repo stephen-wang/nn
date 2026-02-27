@@ -8,8 +8,59 @@ GTEST_LIBS = -lgtest -lgtest_main
 TEST_DIR = test
 SRC_DIR = src
 INC_DIR = include
-CXXFLAGS = -std=c++17 -Wall -g -I$(INC_DIR) -Ithird_party
-RELEASE_CXXFLAGS = -std=c++17 -Wall -O3 -DNDEBUG -I$(INC_DIR) -Ithird_party
+OMP ?= 0
+
+CXXFLAGS = -std=c++17 -Wall -O3 -g -DNDEBUG $(ARCH_FLAGS) -I$(INC_DIR) -Ithird_party
+
+# Release flags: focus on CPU throughput (training is compute-heavy)
+# - Native CPU tuning is compiler/arch dependent:
+#   - Apple clang on arm64: prefers -mcpu=native
+#   - GCC/clang on x86_64: -march=native (and -mtune=native for GCC)
+UNAME_M := $(shell uname -m)
+CXX_VERSION := $(shell $(CXX) --version 2>/dev/null)
+ARCH_FLAGS :=
+ifneq (,$(findstring clang,$(CXX_VERSION)))
+ifeq ($(UNAME_M),arm64)
+ARCH_FLAGS := -mcpu=native
+else
+ARCH_FLAGS := -march=native
+endif
+else
+ARCH_FLAGS := -march=native -mtune=native
+endif
+
+# -flto: enable link-time optimization across translation units
+# -fomit-frame-pointer: can help optimizer in tight loops
+RELEASE_CXXFLAGS = -std=c++17 -Wall -O3 -DNDEBUG $(ARCH_FLAGS) -flto -fomit-frame-pointer -I$(INC_DIR) -Ithird_party
+LDFLAGS =
+
+# Optional: OpenMP (multi-core speedups for convolution-heavy training)
+# macOS: `brew install libomp`, then build with `make OMP=1`.
+ifeq ($(OMP),1)
+LIBOMP_PREFIX := $(shell brew --prefix libomp 2>/dev/null)
+OMP_DEFS := -DNN_ENABLE_OMP
+ifneq (,$(findstring clang,$(CXX_VERSION)))
+OMP_COMPILE_FLAGS := -Xpreprocessor -fopenmp
+OMP_LINK_FLAGS := -lomp
+else
+OMP_COMPILE_FLAGS := -fopenmp
+OMP_LINK_FLAGS := -fopenmp
+endif
+ifneq ($(strip $(LIBOMP_PREFIX)),)
+ifneq ($(wildcard $(LIBOMP_PREFIX)/include/omp.h),)
+OMP_COMPILE_FLAGS += -I$(LIBOMP_PREFIX)/include
+OMP_LINK_FLAGS += -L$(LIBOMP_PREFIX)/lib
+else
+$(error OpenMP requested (OMP=1) but '$(LIBOMP_PREFIX)/include/omp.h' was not found. Run: brew install libomp)
+endif
+else
+$(error OpenMP requested (OMP=1) but Homebrew libomp was not found. Run: brew install libomp)
+endif
+
+CXXFLAGS += $(OMP_DEFS) $(OMP_COMPILE_FLAGS)
+RELEASE_CXXFLAGS += $(OMP_DEFS) $(OMP_COMPILE_FLAGS)
+LDFLAGS += $(OMP_LINK_FLAGS)
+endif
 TESTFLAGS =  -I$(GETST_LIB_INC) -L$(GTEST_LIB_PATH) $(GTEST_LIBS) -pthread
 TARGET = nn
 TEST_TARGET = nn_test
@@ -35,17 +86,18 @@ COVERAGE_FLAGS = -O0 --coverage
 COVERAGE_TESTFLAGS = $(TESTFLAGS)
 COV_OBJ_DIR = build/coverage
 
-#all: (TARGET $(TEST_TARGET) clean
-all: $(TARGET) clean
+# all: default to the fastest build (LTO + native tuning) since training is throughput-bound.
+# Use `make nn` if you explicitly want the non-LTO build.
+all: nn_release clean
 
 $(TARGET): $(MAIN_SRCS)
-	$(CXX) $(CXXFLAGS) -o $@ $^
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 nn_release: $(MAIN_SRCS)
-	$(CXX) $(RELEASE_CXXFLAGS) -o $(TARGET) $^
+	$(CXX) $(RELEASE_CXXFLAGS) -o $(TARGET) $^ $(LDFLAGS)
 
 $(GUI_TARGET): $(GUI_SRCS) $(IMGUI_SRCS) 
-	$(CXX) $(GUI_CXXFLAGS) -I$(GLFW_LIB_INC) -I$(IMGUI_DIR) -I$(IMGUI_BACKENDS) $(GUI_LIBS) -o $@ $^
+	$(CXX) $(GUI_CXXFLAGS) -I$(GLFW_LIB_INC) -I$(IMGUI_DIR) -I$(IMGUI_BACKENDS) $(GUI_LIBS) -o $@ $^ $(LDFLAGS)
 
 nn_gui_info:
 	@echo "Target: $(GUI_TARGET)"

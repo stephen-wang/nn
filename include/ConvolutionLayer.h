@@ -71,4 +71,13 @@ class ConvolutionLayer : public NNLayer { // Convolution Layer
     std::vector<float> bias;
     std::vector<float> vBias;
     std::vector<float> gradBias;
+
+    // Scratch buffers reused to reduce per-call allocations in forward/backward.
+    std::vector<int> inIBaseByOutI_;
+    std::vector<int> mStartByOutI_;
+    std::vector<int> mEndByOutI_;
+    std::vector<int> inJBaseByOutJ_;
+    std::vector<int> nStartByOutJ_;
+    std::vector<int> nEndByOutJ_;
+    std::vector<float> gradBuf_;
 };

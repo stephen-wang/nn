@@ -9,7 +9,7 @@ BatchNormLayer::BatchNormLayer(int channels, float eps, float runningMomentum)
     : NNLayer(NNLayerType::BatchNorm), channels_(channels), eps_(eps),
       runningMomentum_(runningMomentum) {
     if (channels_ <= 0) {
-        LOG << "BatchNormLayer: invalid channels " << channels_;
+                NNLOG_WARN("BatchNormLayer") << "invalid channels " << channels_;
         channels_ = 0;
         return;
     }

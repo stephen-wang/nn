@@ -2,9 +2,9 @@
 
 #include "BatchNormLayer.h"
 #include "ConvolutionLayer.h"
+#include "DefaultCNNConfig.h"
 #include "FCNNLayer.h"
 #include "MaxPoolingLayer.h"
-#include "DefaultCNNConfig.h"
 #include "NNUtils.h"
 #include "nnlog/nnlog.h"
 
@@ -22,7 +22,7 @@ std::mt19937& rng() {
 }
 
 NNMatrixPtr augmentCifar32Channel(const NNMatrixPtr& in, int pad, int cropY, int cropX,
-                                 bool hflip) {
+                                  bool hflip) {
     if (!in) {
         return nullptr;
     }
@@ -39,19 +39,11 @@ NNMatrixPtr augmentCifar32Channel(const NNMatrixPtr& in, int pad, int cropY, int
         return nullptr;
     }
 
-    const int paddedSide = side + 2 * pad;
-    auto padded = std::make_shared<NNMatrix>(paddedSide, paddedSide, 0.0f);
-    float* padData = padded ? padded->data() : nullptr;
-    if (!padData) {
-        return nullptr;
-    }
-
-    for (int y = 0; y < side; ++y) {
-        const float* src = inData + y * side;
-        float* dst = padData + (y + pad) * paddedSide + pad;
-        std::copy(src, src + side, dst);
-    }
-
+    // Instead of constructing a padded temporary matrix, compute the crop directly.
+    // Semantics match:
+    //   padded has input placed at offset (pad,pad), zeros elsewhere
+    //   crop is taken from padded at (cropY,cropX)
+    //   optional horizontal flip is applied to the cropped patch
     cropY = std::max(0, std::min(cropY, 2 * pad));
     cropX = std::max(0, std::min(cropX, 2 * pad));
 
@@ -62,14 +54,23 @@ NNMatrixPtr augmentCifar32Channel(const NNMatrixPtr& in, int pad, int cropY, int
     }
 
     for (int y = 0; y < side; ++y) {
-        const float* srcRow = padData + (y + cropY) * paddedSide + cropX;
+        // y in padded coordinates is (y + cropY). Convert to input coords by subtracting pad.
+        const int srcY = (y + cropY) - pad;
         float* dstRow = outData + y * side;
-        if (!hflip) {
-            std::copy(srcRow, srcRow + side, dstRow);
-        } else {
-            for (int x = 0; x < side; ++x) {
-                dstRow[x] = srcRow[side - 1 - x];
+        if (srcY < 0 || srcY >= side) {
+            // Entire row is padding (already zero-initialized).
+            continue;
+        }
+
+        const float* srcBaseRow = inData + srcY * side;
+        for (int x = 0; x < side; ++x) {
+            const int px = hflip ? (side - 1 - x) : x;
+            const int srcX = (px + cropX) - pad;
+            if (srcX < 0 || srcX >= side) {
+                // Padding.
+                continue;
             }
+            dstRow[x] = srcBaseRow[srcX];
         }
     }
 
@@ -109,6 +110,49 @@ NNMatrixPtrV maybeAugmentCifar32Sample(const NNMatrixPtrV& sample, int pad) {
         out.push_back(std::move(aug));
     }
     return out;
+}
+
+NNMatrixPtr flattenAndConcatReuse(const NNMatrixPtrV& mats, NNMatrixPtr& reuse) {
+    if (mats.empty()) {
+        return nullptr;
+    }
+
+    int total = 0;
+    for (const auto& m : mats) {
+        if (!m) {
+            return nullptr;
+        }
+        const int r = m->getRowSize();
+        const int c = m->getColSize();
+        if (r <= 0 || c <= 0) {
+            return nullptr;
+        }
+        total += r * c;
+    }
+    if (total <= 0) {
+        return nullptr;
+    }
+
+    if (!reuse || reuse->getRowSize() != total || reuse->getColSize() != 1) {
+        reuse = std::make_shared<NNMatrix>(total, 1);
+    }
+
+    float* out = reuse ? reuse->data() : nullptr;
+    if (!out) {
+        return nullptr;
+    }
+
+    int offset = 0;
+    for (const auto& m : mats) {
+        const float* in = m ? m->data() : nullptr;
+        const int len = m ? (m->getRowSize() * m->getColSize()) : 0;
+        if (!in || len <= 0) {
+            return nullptr;
+        }
+        std::copy(in, in + len, out + offset);
+        offset += len;
+    }
+    return reuse;
 }
 } // namespace
 
@@ -172,6 +216,10 @@ NNMatrixPtrV CNN::forward(int epoc, int batchNo, int inChannelSize, const NNMatr
 
     const size_t sampleCount = X.size() / inChannelSize;
     outputs.assign(sampleCount, nullptr);
+
+    if (flatScratchBySample_.size() < sampleCount) {
+        flatScratchBySample_.resize(sampleCount, nullptr);
+    }
 
     // Build per-sample input channel vectors.
     std::vector<NNMatrixPtrV> curBySample(sampleCount);
@@ -262,7 +310,7 @@ NNMatrixPtrV CNN::forward(int epoc, int batchNo, int inChannelSize, const NNMatr
                     curBySample[s][0]->getRowSize() == fc->getInputSize()) {
                     flat = curBySample[s][0];
                 } else {
-                    flat = NNUtils::flattenAndConcat(curBySample[s]);
+                    flat = flattenAndConcatReuse(curBySample[s], flatScratchBySample_[s]);
                 }
                 if (!flat) {
                     curBySample[s].clear();
@@ -509,6 +557,11 @@ void CNN::backward(const NNMatrixPtrV& X, const NNMatrixPtrV& Y, float learningR
     // Un-flatten dFlat into per-channel gradients matching the pre-FC activation.
     std::vector<NNMatrixPtrV> dCurBySample(loopCount);
     int validConvSampleCount = 0;
+
+    if (dUnflattenScratchBySample_.size() < loopCount) {
+        dUnflattenScratchBySample_.resize(loopCount);
+    }
+
     for (size_t i = 0; i < loopCount; ++i) {
         if (!dFlatBySample[i]) {
             continue;
@@ -534,11 +587,26 @@ void CNN::backward(const NNMatrixPtrV& X, const NNMatrixPtrV& Y, float learningR
         dCur.reserve(preFcOut.size());
         const float* dFlatData = dFlatBySample[i]->data();
         int offset = 0;
-        for (const auto& m : preFcOut) {
-            const int r = m->getRowSize();
-            const int c = m->getColSize();
+
+        auto& scratch = dUnflattenScratchBySample_[i];
+        if (scratch.size() != preFcOut.size()) {
+            scratch.assign(preFcOut.size(), nullptr);
+        }
+
+        for (size_t ch = 0; ch < preFcOut.size(); ++ch) {
+            const auto& m = preFcOut[ch];
+            const int r = m ? m->getRowSize() : 0;
+            const int c = m ? m->getColSize() : 0;
             const int len = r * c;
-            auto g = std::make_shared<NNMatrix>(r, c, 0.0f);
+            if (!m || r <= 0 || c <= 0 || len <= 0) {
+                dCur.clear();
+                break;
+            }
+
+            auto& g = scratch[ch];
+            if (!g || g->getRowSize() != r || g->getColSize() != c) {
+                g = std::make_shared<NNMatrix>(r, c, 0.0f);
+            }
             float* gData = g ? g->data() : nullptr;
             if (!dFlatData || !gData) {
                 dCur.clear();
@@ -546,7 +614,7 @@ void CNN::backward(const NNMatrixPtrV& X, const NNMatrixPtrV& Y, float learningR
             }
             std::copy(dFlatData + offset, dFlatData + offset + len, gData);
             offset += len;
-            dCur.push_back(std::move(g));
+            dCur.push_back(g);
         }
         if (!dCur.empty()) {
             dCurBySample[i] = std::move(dCur);
@@ -631,22 +699,21 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
                 BatchStatsCallback batchStatsCallback) {
     constexpr int kLogEveryNBatches = 50;
 
-    // Simple step LR schedule: decay by 10x at ~1/3 and ~2/3 of training.
-    // For short runs (e.g. 9 epochs), this prevents mid-run overshoot/decay in accuracy.
-    const int lrStep1 = std::max(1, epochNum / 3);
-    const int lrStep2 = std::max(lrStep1 + 1, (epochNum * 2) / 3);
+    // Reduce-on-plateau LR schedule.
+    // NOTE: This uses dataSet.test* as the evaluation set; if you have a proper validation split,
+    // prefer using that here and reserve the true test set for final evaluation.
+    constexpr float kLrDecayFactor = 0.1f;
+    constexpr int kLrPatienceEpochs = 2;
+    constexpr float kMinAccDelta = 0.001f; // absolute accuracy threshold (0.1 percentage point)
+    constexpr float kMinLearningRate = 1.0e-6f;
 
+    float bestAccuracy = -1.0f;
+    int epochsWithoutImprovement = 0;
     int e = 0;
+    float curLearningRate = learningRate;
     while (e < epochNum) {
         if (stopCallback && stopCallback()) {
             return;
-        }
-
-        float curLearningRate = learningRate;
-        if (e >= lrStep2) {
-            curLearningRate *= 0.01f;
-        } else if (e >= lrStep1) {
-            curLearningRate *= 0.1f;
         }
 
         LOG << "Epoc " << e << "/" << epochNum << ", trainData " << dataSet.trainInput_.size()
@@ -815,6 +882,18 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
         float acc = accuracy(e, dataSet.testInput_, dataSet.testLabel_);
         LOG << "Epoc " << e + 1 << "/" << epochNum << ", loss " << avgLoss << ", acc "
             << std::setprecision(3) << acc * 100;
+
+        if (acc > bestAccuracy + kMinAccDelta) {
+            bestAccuracy = acc;
+            epochsWithoutImprovement = 0;
+        } else {
+            epochsWithoutImprovement += 1;
+        }
+
+        if (epochsWithoutImprovement >= kLrPatienceEpochs && curLearningRate > kMinLearningRate) {
+            curLearningRate = std::max(curLearningRate * kLrDecayFactor, kMinLearningRate);
+            epochsWithoutImprovement = 0;
+        }
         if (callback) {
             callback(e + 1, epochNum, avgLoss, acc);
         }
