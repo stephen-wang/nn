@@ -30,17 +30,23 @@ static void startCnnTraining() {
     CNNConfigBuilder builder;
     auto configs =
         builder
-            // Conv1: 3 -> 16 (3x3, stride 1, pad 1)
+            // Conv1: 3 -> 32 (3x3, stride 1, pad 1)
             .addConvolution(CIFAR100_CNN_IN_CHANNELS, CIFAR100_CNN_CONV1_OUT_CHANNELS,
                             CIFAR100_CNN_CONV_FILTER_SIZE, CIFAR100_CNN_CONV_STRIDE_SIZE,
                             CIFAR100_CNN_CONV_PADDING_SIZE)
-            // Conv2: 16 -> 32 (3x3, stride 1, pad 1)
+            // Conv2: 32 -> 64 (3x3, stride 1, pad 1)
             .addConvolution(CIFAR100_CNN_CONV1_OUT_CHANNELS, CIFAR100_CNN_CONV2_OUT_CHANNELS,
                             CIFAR100_CNN_CONV_FILTER_SIZE, CIFAR100_CNN_CONV_STRIDE_SIZE,
                             CIFAR100_CNN_CONV_PADDING_SIZE)
             // Pool: 2x2, stride 2 (32x32 -> 16x16)
             .addMaxPooling(CIFAR100_CNN_POOLING_FILTER_SIZE, CIFAR100_CNN_POOLING_STRIDE_SIZE)
-            // FC: 8192 -> 256 -> 100
+            // Conv3: 64 -> 128 (3x3, stride 1, pad 1)
+            .addConvolution(CIFAR100_CNN_CONV2_OUT_CHANNELS, CIFAR100_CNN_CONV3_OUT_CHANNELS,
+                            CIFAR100_CNN_CONV_FILTER_SIZE, CIFAR100_CNN_CONV_STRIDE_SIZE,
+                            CIFAR100_CNN_CONV_PADDING_SIZE)
+            // Pool: 2x2, stride 2 (16x16 -> 8x8)
+            .addMaxPooling(CIFAR100_CNN_POOLING_FILTER_SIZE, CIFAR100_CNN_POOLING_STRIDE_SIZE)
+            // FC: 8192 -> 512 -> 100
             .addFullyConnected(CIFAR100_CNN_FC1_IN_SIZE, CIFAR100_CNN_FC1_OUT_SIZE)
             .addFullyConnected(CIFAR100_CNN_FC1_OUT_SIZE, CIFAR100_CNN_OUTPUT_SIZE)
             .build();
