@@ -34,16 +34,19 @@ static void startCnnTraining() {
             .addConvolution(CIFAR100_CNN_IN_CHANNELS, CIFAR100_CNN_CONV1_OUT_CHANNELS,
                             CIFAR100_CNN_CONV_FILTER_SIZE, CIFAR100_CNN_CONV_STRIDE_SIZE,
                             CIFAR100_CNN_CONV_PADDING_SIZE)
+            .addBatchNorm(CIFAR100_CNN_CONV1_OUT_CHANNELS)
             // Conv2: 32 -> 64 (3x3, stride 1, pad 1)
             .addConvolution(CIFAR100_CNN_CONV1_OUT_CHANNELS, CIFAR100_CNN_CONV2_OUT_CHANNELS,
                             CIFAR100_CNN_CONV_FILTER_SIZE, CIFAR100_CNN_CONV_STRIDE_SIZE,
                             CIFAR100_CNN_CONV_PADDING_SIZE)
+            .addBatchNorm(CIFAR100_CNN_CONV2_OUT_CHANNELS)
             // Pool: 2x2, stride 2 (32x32 -> 16x16)
             .addMaxPooling(CIFAR100_CNN_POOLING_FILTER_SIZE, CIFAR100_CNN_POOLING_STRIDE_SIZE)
             // Conv3: 64 -> 128 (3x3, stride 1, pad 1)
             .addConvolution(CIFAR100_CNN_CONV2_OUT_CHANNELS, CIFAR100_CNN_CONV3_OUT_CHANNELS,
                             CIFAR100_CNN_CONV_FILTER_SIZE, CIFAR100_CNN_CONV_STRIDE_SIZE,
                             CIFAR100_CNN_CONV_PADDING_SIZE)
+            .addBatchNorm(CIFAR100_CNN_CONV3_OUT_CHANNELS)
             // Pool: 2x2, stride 2 (16x16 -> 8x8)
             .addMaxPooling(CIFAR100_CNN_POOLING_FILTER_SIZE, CIFAR100_CNN_POOLING_STRIDE_SIZE)
             // FC: 8192 -> 512 -> 100
@@ -53,7 +56,7 @@ static void startCnnTraining() {
 
     auto cnn = CNN(configs);
     cnn.train(dataSet, CIFAR100_CNN_EPOCHS, CIFAR100_CNN_BATCH_SIZE, CIFAR100_CNN_LEARNING_RATE,
-              CIFAR100_CNN_MOMENTUM);
+              CIFAR100_CNN_MOMENTUM, CIFAR100_CNN_WEIGHT_DECAY);
 }
 
 static void startDnnTraining() {

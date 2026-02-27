@@ -207,9 +207,11 @@ void CNNGuiUtils::startTraining(TrainingStats& stats) {
             .addConvolution(CIFAR100_CNN_IN_CHANNELS, CIFAR100_CNN_CONV1_OUT_CHANNELS,
                             CIFAR100_CNN_CONV_FILTER_SIZE, CIFAR100_CNN_CONV_STRIDE_SIZE,
                             CIFAR100_CNN_CONV_PADDING_SIZE)
+            .addBatchNorm(CIFAR100_CNN_CONV1_OUT_CHANNELS)
             .addConvolution(CIFAR100_CNN_CONV1_OUT_CHANNELS, CIFAR100_CNN_CONV2_OUT_CHANNELS,
                             CIFAR100_CNN_CONV_FILTER_SIZE, CIFAR100_CNN_CONV_STRIDE_SIZE,
                             CIFAR100_CNN_CONV_PADDING_SIZE)
+            .addBatchNorm(CIFAR100_CNN_CONV2_OUT_CHANNELS)
             .addMaxPooling(CIFAR100_CNN_POOLING_FILTER_SIZE, CIFAR100_CNN_POOLING_STRIDE_SIZE)
             .addFullyConnected(kFlattenSize, kFcHiddenSize)
             .addFullyConnected(kFcHiddenSize, kOutputSize)
@@ -302,8 +304,8 @@ void CNNGuiUtils::startTraining(TrainingStats& stats) {
 
     CNN::StopCallback stopCallback = [&]() { return stats.stop.load(); };
 
-    cnn.train(dataset, kEpochs, kBatchSize, kLearningRate, kMomentum, callback, layerCallback,
-              batchCallback, stopCallback, batchStatsCallback);
+    cnn.train(dataset, kEpochs, kBatchSize, kLearningRate, kMomentum, CIFAR100_CNN_WEIGHT_DECAY,
+              callback, layerCallback, batchCallback, stopCallback, batchStatsCallback);
 
     stats.activeLayer.store(-1);
     stats.activePhase.store(static_cast<int>(CNN::LayerPhase::Idle));

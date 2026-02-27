@@ -4,7 +4,7 @@
 
 #include <memory>
 
-enum class CNNLayerType { Convolution = 0, Pooling = 1, FullyConnected = 2 };
+enum class CNNLayerType { Convolution = 0, Pooling = 1, FullyConnected = 2, BatchNorm = 3 };
 
 class CNNConfig {
   public:
@@ -40,7 +40,7 @@ class ConvolutionLayerConfig : public CNNConfig {
     int getPadding() const { return padding; }
     MatrixFunc getActFunction() const { return actFunction; }
 
-private:
+  private:
     int padding;
     MatrixFunc actFunction;
 };
@@ -49,6 +49,13 @@ class MaxPoolingLayerConfig : public CNNConfig {
   public:
     MaxPoolingLayerConfig(int kernelSize, int stride)
         : CNNConfig(CNNLayerType::Pooling, -1, -1, kernelSize, stride) {}
+};
+
+class BatchNormLayerConfig : public CNNConfig {
+  public:
+    explicit BatchNormLayerConfig(int channels)
+        : CNNConfig(CNNLayerType::BatchNorm, channels, channels) {}
+    int getChannels() const { return getInputSize(); }
 };
 
 typedef std::shared_ptr<const CNNConfig> CNNConfigPtr;

@@ -69,7 +69,8 @@ void ConvolutionLayer::zeroGrad() {
     gradBias.assign(static_cast<size_t>(outChannelSize), 0.0f);
 }
 
-void ConvolutionLayer::applyGrad(int batchSize, float learningRate, float momentum) {
+void ConvolutionLayer::applyGrad(int batchSize, float learningRate, float momentum,
+                                 float weightDecay) {
     if (batchSize <= 0) {
         LOG << "ConvolutionLayer::applyGrad invalid batchSize " << batchSize;
         return;
@@ -85,7 +86,8 @@ void ConvolutionLayer::applyGrad(int batchSize, float learningRate, float moment
         return;
     }
 
-    const float scale = learningRate / static_cast<float>(batchSize);
+    const float scaleGrad = learningRate / static_cast<float>(batchSize);
+    const float scaleWd = learningRate * weightDecay;
     for (size_t i = 0; i < filters.size(); ++i) {
         auto& wMat = filters[i];
         auto& vMat = vFilters[i];
@@ -105,14 +107,14 @@ void ConvolutionLayer::applyGrad(int batchSize, float learningRate, float moment
 
         const int len = filterSize * filterSize;
         for (int k = 0; k < len; ++k) {
-            v[k] = momentum * v[k] + scale * g[k];
+            v[k] = momentum * v[k] + scaleGrad * g[k] + scaleWd * w[k];
             w[k] -= v[k];
         }
     }
 
     for (int oc = 0; oc < outChannelSize; ++oc) {
         const size_t idx = static_cast<size_t>(oc);
-        vBias[idx] = momentum * vBias[idx] + scale * gradBias[idx];
+        vBias[idx] = momentum * vBias[idx] + scaleGrad * gradBias[idx];
         bias[idx] -= vBias[idx];
     }
 }

@@ -13,7 +13,8 @@ class FCNNLayer : public NNLayer { // fully connecter neural network layer
     NNMatrixPtrV forward(const NNMatrixPtrV& input);
     NNMatrix calculatePrevLayerDA(const NNMatrix& dz);
     NNMatrix setDz(NNMatrix&& other);
-    void update(const NNMatrix& dw, const NNMatrix& db, float alpha, float momentum);
+    void update(const NNMatrix& dw, const NNMatrix& db, float alpha, float momentum,
+          float weightDecay = 0.0f);
     int getInputSize() const { return weight.getColSize(); }
     int getOutputSize() const { return weight.getRowSize(); }
     void dump();

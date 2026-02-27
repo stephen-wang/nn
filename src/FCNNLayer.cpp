@@ -77,10 +77,13 @@ NNMatrixPtrV FCNNLayer::forward(const NNMatrixPtrV& input) {
     return outputs;
 }
 
-void FCNNLayer::update(const NNMatrix& dw, const NNMatrix& db, float alpha, float momentum) {
+void FCNNLayer::update(const NNMatrix& dw, const NNMatrix& db, float alpha, float momentum,
+                       float weightDecay) {
     for (int i = 0; i < weight.getRowSize(); i++) {
         for (int j = 0; j < weight.getColSize(); j++) {
-            auto delta = momentum * vWeight.get(i, j) + alpha * dw.get(i, j);
+            const float w = weight.get(i, j);
+            const float g = dw.get(i, j) + weightDecay * w;
+            auto delta = momentum * vWeight.get(i, j) + alpha * g;
             vWeight.set(i, j, delta);
             weight.set(i, j, weight.get(i, j) - delta);
         }

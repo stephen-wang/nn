@@ -49,6 +49,12 @@ const int CIFAR100_CNN_BATCH_SIZE = 64;
 const float CIFAR100_CNN_LEARNING_RATE = 0.02f;
 const float CIFAR100_CNN_MOMENTUM = 0.9f;
 
+// Training regularization / stabilization.
+const float CIFAR100_CNN_WEIGHT_DECAY = 5e-4f;
+const bool CIFAR100_CNN_USE_BATCHNORM = true;
+const bool CIFAR100_CNN_USE_DATA_AUGMENTATION = true;
+const int CIFAR100_CNN_AUGMENT_PAD = 4;
+
 // Practical defaults: CNN training is CPU-heavy; keep the default run small to iterate faster.
 // Increase these (or set to <=0) for full-dataset training.
 const int CIFAR100_CNN_MAX_TRAIN_SAMPLES = 50000;

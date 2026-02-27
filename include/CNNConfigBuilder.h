@@ -25,6 +25,11 @@ class CNNConfigBuilder {
         return *this;
     }
 
+    CNNConfigBuilder& addBatchNorm(int channels) {
+        configs_.push_back(std::make_shared<BatchNormLayerConfig>(channels));
+        return *this;
+    }
+
     std::vector<std::shared_ptr<const CNNConfig>> build() const { return configs_; }
 
   private:

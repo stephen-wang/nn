@@ -8,6 +8,7 @@ enum class NNLayerType : std::uint8_t {
     Convolution = 1,
     Pooling = 2,
     FullyConnected = 3,
+    BatchNorm = 4,
 };
 
 class NNLayer {

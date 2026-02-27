@@ -51,7 +51,7 @@ class ConvolutionLayer : public NNLayer { // Convolution Layer
 
     // Backpropagation
     void zeroGrad();
-    void applyGrad(int batchSize, float learningRate, float momentum);
+    void applyGrad(int batchSize, float learningRate, float momentum, float weightDecay = 0.0f);
     NNMatrixPtrV backward(const NNMatrixPtrV& inputs, const NNMatrixPtrV& outputs,
                           const NNMatrixPtrV& dOutputs);
 

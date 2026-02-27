@@ -26,6 +26,9 @@ class CNN : public NN { // Simple Convolutional Neural Network
 
     void train(NNDataset& dataSet, int epochNum, int batchSize, float learningRate, float momentum);
 
+    void train(NNDataset& dataSet, int epochNum, int batchSize, float learningRate, float momentum,
+               float weightDecay);
+
     using TrainCallback =
         std::function<void(int epoch, int totalEpochs, float loss, float accuracy)>;
     using BatchCallback = std::function<void(int epoch, int batch, const NNMatrixPtrV& input,
@@ -42,12 +45,18 @@ class CNN : public NN { // Simple Convolutional Neural Network
                TrainCallback callback, LayerCallback layerCallback, BatchCallback batchCallback,
                StopCallback stopCallback, BatchStatsCallback batchStatsCallback);
 
+    void train(NNDataset& dataSet, int epochNum, int batchSize, float learningRate, float momentum,
+               float weightDecay, TrainCallback callback, LayerCallback layerCallback,
+               BatchCallback batchCallback, StopCallback stopCallback,
+               BatchStatsCallback batchStatsCallback);
+
   private:
     std::shared_ptr<NNLayer> buildCNNLayer(const CNNConfig& config);
     NNMatrixPtrV forward(int epoc, int batchNo, int inChannelSize, const NNMatrixPtrV& X,
-                         LayerCallback layerCallback = nullptr);
+                         bool training, LayerCallback layerCallback = nullptr);
     void backward(const NNMatrixPtrV& X, const NNMatrixPtrV& Y, float learningRate, float momentum,
-                  int epoc, int batchNo, int inChannelSize, LayerCallback layerCallback = nullptr);
+                  float weightDecay, int epoc, int batchNo, int inChannelSize,
+                  LayerCallback layerCallback = nullptr);
     float loss(NNMatrixPtrV& Y);
     float accuracy(int epoc, const NNMatrixPtrV& x_test, const NNMatrixPtrV& y_test);
 };
