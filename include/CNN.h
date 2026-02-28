@@ -26,6 +26,11 @@ class CNN : public NN { // Simple Convolutional Neural Network
     NNMatrixPtrV flatScratchBySample_;
     std::vector<NNMatrixPtrV> dUnflattenScratchBySample_;
 
+    // Reusable augmentation buffers: one per sample in the largest observed batch.
+    // Each entry is an NNMatrixPtrV of size `inChannelSize` used to store augmented
+    // channels for a single sample. Allocated on demand and reused across batches/epochs.
+    NNMatrixPtrVV augmentPool_;
+
   public:
     CNN(const std::vector<CNNConfigPtr>& configs);
     virtual ~CNN() { layers.clear(); }

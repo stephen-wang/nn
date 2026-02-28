@@ -9,7 +9,7 @@ BatchNormLayer::BatchNormLayer(int channels, float eps, float runningMomentum)
     : NNLayer(NNLayerType::BatchNorm), channels_(channels), eps_(eps),
       runningMomentum_(runningMomentum) {
     if (channels_ <= 0) {
-                NNLOG_WARN("BatchNormLayer") << "invalid channels " << channels_;
+        NNLOG_WARN("BatchNormLayer") << "invalid channels " << channels_;
         channels_ = 0;
         return;
     }
@@ -167,9 +167,9 @@ std::vector<NNMatrixPtrV> BatchNormLayer::forwardBatch(const std::vector<NNMatri
             const float beta = beta_[static_cast<size_t>(c)];
 
             for (int i = 0; i < len; ++i) {
-                const float xn = (xData[i] - mean) * invStd;
-                xhatData[i] = xn;
-                yData[i] = gamma * xn + beta;
+                const float xhat = (xData[i] - mean) * invStd;
+                xhatData[i] = xhat;
+                yData[i] = gamma * xhat + beta;
             }
 
             sampleOut.push_back(std::move(y));

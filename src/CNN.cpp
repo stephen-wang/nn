@@ -21,8 +21,8 @@ std::mt19937& rng() {
     return gen;
 }
 
-NNMatrixPtr augmentCifar32Channel(const NNMatrixPtr& in, int pad, int cropY, int cropX,
-                                  bool hflip) {
+NNMatrixPtr augmentCifar32Channel(const NNMatrixPtr& in, int pad, int cropY, int cropX, bool hflip,
+                                  NNMatrixPtr& reuse) {
     if (!in) {
         return nullptr;
     }
@@ -47,7 +47,18 @@ NNMatrixPtr augmentCifar32Channel(const NNMatrixPtr& in, int pad, int cropY, int
     cropY = std::max(0, std::min(cropY, 2 * pad));
     cropX = std::max(0, std::min(cropX, 2 * pad));
 
-    auto out = std::make_shared<NNMatrix>(side, side, 0.0f);
+    // Prepare reuse buffer (allocate once and reuse across calls where provided).
+    if (!reuse || reuse->getRowSize() != side || reuse->getColSize() != side) {
+        reuse = std::make_shared<NNMatrix>(side, side, 0.0f);
+    } else {
+        float* z = reuse->data();
+        if (z) {
+            const int len = side * side;
+            std::fill_n(z, len, 0.0f);
+        }
+    }
+
+    auto out = reuse;
     float* outData = out ? out->data() : nullptr;
     if (!outData) {
         return nullptr;
@@ -77,7 +88,8 @@ NNMatrixPtr augmentCifar32Channel(const NNMatrixPtr& in, int pad, int cropY, int
     return out;
 }
 
-NNMatrixPtrV maybeAugmentCifar32Sample(const NNMatrixPtrV& sample, int pad) {
+NNMatrixPtrV maybeAugmentCifar32Sample(const NNMatrixPtrV& sample, int pad,
+                                       NNMatrixPtrV* reuseBuffers) {
     if (!CIFAR100_CNN_USE_DATA_AUGMENTATION) {
         return sample;
     }
@@ -103,7 +115,11 @@ NNMatrixPtrV maybeAugmentCifar32Sample(const NNMatrixPtrV& sample, int pad) {
     NNMatrixPtrV out;
     out.reserve(sample.size());
     for (size_t c = 0; c < sample.size(); ++c) {
-        auto aug = augmentCifar32Channel(sample[c], pad, cropY, cropX, hflip);
+        NNMatrixPtr tempReuse; // used when caller doesn't provide reuse buffers
+        NNMatrixPtr& reuseRef = (reuseBuffers && reuseBuffers->size() >= sample.size())
+                                    ? (*reuseBuffers)[c]
+                                    : tempReuse;
+        auto aug = augmentCifar32Channel(sample[c], pad, cropY, cropX, hflip, reuseRef);
         if (!aug) {
             return sample;
         }
@@ -704,7 +720,7 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
     // prefer using that here and reserve the true test set for final evaluation.
     constexpr float kLrDecayFactor = 0.1f;
     constexpr int kLrPatienceEpochs = 2;
-    constexpr float kMinAccDelta = 0.001f; // absolute accuracy threshold (0.1 percentage point)
+    constexpr float kMinAccDelta = 0.015f; // absolute accuracy threshold (1.5 percentage point)
     constexpr float kMinLearningRate = 1.0e-6f;
 
     float bestAccuracy = -1.0f;
@@ -762,6 +778,28 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
             batchX.reserve(static_cast<size_t>(expectedBatchXCount));
             batchY.reserve(static_cast<size_t>(batchSampleCount));
 
+            // Ensure we have a reusable augmentation pool for this batch to avoid
+            // allocating augmented channel matrices repeatedly. `augmentPool_` is
+            // sized to the current batch sample count and each entry is sized to
+            // `inChannelSize` (channels) with nullptr placeholders.
+            if (inChannelSize == CIFAR100_CNN_IN_CHANNELS) {
+                if (augmentPool_.size() < static_cast<size_t>(batchSampleCount)) {
+                    const size_t old = augmentPool_.size();
+                    augmentPool_.resize(static_cast<size_t>(batchSampleCount));
+                    for (size_t p = old; p < augmentPool_.size(); ++p) {
+                        augmentPool_[p].assign(static_cast<size_t>(inChannelSize), NNMatrixPtr{});
+                    }
+                } else {
+                    for (int p = 0; p < batchSampleCount; ++p) {
+                        if (augmentPool_[static_cast<size_t>(p)].size() !=
+                            static_cast<size_t>(inChannelSize)) {
+                            augmentPool_[static_cast<size_t>(p)].assign(
+                                static_cast<size_t>(inChannelSize), NNMatrixPtr{});
+                        }
+                    }
+                }
+            }
+
             for (int i = startSample; i < endSample; ++i) {
                 const int base = i * inChannelSize;
                 const int last = base + inChannelSize;
@@ -782,7 +820,10 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
 
                 // CIFAR-style augmentation (only if sample looks like 32x32 RGB).
                 if (inChannelSize == CIFAR100_CNN_IN_CHANNELS) {
-                    sample = maybeAugmentCifar32Sample(sample, CIFAR100_CNN_AUGMENT_PAD);
+                    const int sampleIdx = i - startSample;
+                    sample =
+                        maybeAugmentCifar32Sample(sample, CIFAR100_CNN_AUGMENT_PAD,
+                                                  &augmentPool_[static_cast<size_t>(sampleIdx)]);
                 }
 
                 if (static_cast<int>(sample.size()) != inChannelSize) {
