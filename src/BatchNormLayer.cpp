@@ -71,7 +71,12 @@ std::vector<NNMatrixPtrV> BatchNormLayer::forwardBatch(const std::vector<NNMatri
     xhatBySample_.assign(batchSize, NNMatrixPtrV{});
 
     // Compute mean/var per channel over (batch * H * W).
+#if defined(NN_ENABLE_OMP)
+#pragma omp parallel for schedule(static)
     for (int c = 0; c < channels_; ++c) {
+#else
+    for (int c = 0; c < channels_; ++c) {
+#endif
         double sum = 0.0;
         double sumSq = 0.0;
         int n = 0;
@@ -133,7 +138,12 @@ std::vector<NNMatrixPtrV> BatchNormLayer::forwardBatch(const std::vector<NNMatri
     }
 
     // Normalize and affine transform.
+#if defined(NN_ENABLE_OMP)
+#pragma omp parallel for schedule(static)
     for (size_t s = 0; s < batchSize; ++s) {
+#else
+    for (size_t s = 0; s < batchSize; ++s) {
+#endif
         const auto& sample = batch[s];
         if (sample.empty()) {
             continue;
@@ -199,7 +209,12 @@ std::vector<NNMatrixPtrV> BatchNormLayer::backwardBatch(const std::vector<NNMatr
     std::fill(dBeta_.begin(), dBeta_.end(), 0.0f);
 
     // Compute dBeta and dGamma per channel.
+#if defined(NN_ENABLE_OMP)
+#pragma omp parallel for schedule(static)
     for (int c = 0; c < channels_; ++c) {
+#else
+    for (int c = 0; c < channels_; ++c) {
+#endif
         double dBeta = 0.0;
         double dGamma = 0.0;
 
@@ -231,7 +246,12 @@ std::vector<NNMatrixPtrV> BatchNormLayer::backwardBatch(const std::vector<NNMatr
     }
 
     // Compute dX.
+#if defined(NN_ENABLE_OMP)
+#pragma omp parallel for schedule(static)
     for (size_t s = 0; s < batchSize; ++s) {
+#else
+    for (size_t s = 0; s < batchSize; ++s) {
+#endif
         const auto& sampleDY = dY[s];
         const auto& sampleXhat = xhatBySample_[s];
         if (sampleDY.empty() || sampleXhat.empty()) {

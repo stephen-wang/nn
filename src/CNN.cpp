@@ -725,9 +725,9 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
 
     float bestAccuracy = -1.0f;
     int epochsWithoutImprovement = 0;
-    int e = 0;
+    int e = 1;
     float curLearningRate = learningRate;
-    while (e < epochNum) {
+    while (e <= epochNum) {
         if (stopCallback && stopCallback()) {
             return;
         }
@@ -921,13 +921,16 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
 
         float avgLoss = numBatches > 0 ? (epochLoss / static_cast<float>(numBatches)) : 0.0f;
         float acc = accuracy(e, dataSet.testInput_, dataSet.testLabel_);
-        LOG << "Epoc " << e + 1 << "/" << epochNum << ", loss " << avgLoss << ", acc "
+        LOG << "Epoc " << e << "/" << epochNum << ", loss " << avgLoss << ", acc "
             << std::setprecision(3) << acc * 100;
 
         if (acc > bestAccuracy + kMinAccDelta) {
             bestAccuracy = acc;
             epochsWithoutImprovement = 0;
         } else {
+            if (acc > bestAccuracy) {
+                bestAccuracy = acc;
+            }
             epochsWithoutImprovement += 1;
         }
 

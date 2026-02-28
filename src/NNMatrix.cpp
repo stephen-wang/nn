@@ -5,6 +5,9 @@
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#if defined(NN_ENABLE_OMP)
+#include <omp.h>
+#endif
 
 NNMatrix::NNMatrix(int row, int col, float defaultValue) {
     if (row <= 0 || col <= 0) {
@@ -146,7 +149,12 @@ NNMatrix NNMatrix::dotProduct(const NNMatrix& other) {
     const float* a = mem_;
     const float* b = other.mem_;
 
+#if defined(NN_ENABLE_OMP)
+#pragma omp parallel for schedule(static)
     for (int i = 0; i < m; i++) {
+#else
+    for (int i = 0; i < m; i++) {
+#endif
         float* outRow = out + i * n;
         const float* aRow = a + i * kDim;
         for (int j = 0; j < kDim; j++) {
@@ -171,9 +179,16 @@ NNMatrix NNMatrix::elementProduct(const NNMatrix& other) {
     const float* a = mem_;
     const float* b = other.mem_;
     float* out = ret.mem_;
+#if defined(NN_ENABLE_OMP)
+#pragma omp parallel for schedule(static)
     for (int idx = 0; idx < total; idx++) {
         out[idx] = a[idx] * b[idx];
     }
+#else
+    for (int idx = 0; idx < total; idx++) {
+        out[idx] = a[idx] * b[idx];
+    }
+#endif
 
     return ret;
 }
@@ -187,9 +202,16 @@ NNMatrix& NNMatrix::operator+=(const NNMatrix& other) {
     const int total = row_ * col_;
     float* dst = mem_;
     const float* src = other.mem_;
+#if defined(NN_ENABLE_OMP)
+#pragma omp parallel for schedule(static)
     for (int idx = 0; idx < total; idx++) {
         dst[idx] += src[idx];
     }
+#else
+    for (int idx = 0; idx < total; idx++) {
+        dst[idx] += src[idx];
+    }
+#endif
     return *this;
 }
 
@@ -256,9 +278,16 @@ NNMatrix NNMatrix::applyFunction(const MatrixFunc& func) {
     const int total = row_ * col_;
     const float* src = mem_;
     float* dst = ret.mem_;
+#if defined(NN_ENABLE_OMP)
+#pragma omp parallel for schedule(static)
     for (int idx = 0; idx < total; idx++) {
         dst[idx] = func(src[idx]);
     }
+#else
+    for (int idx = 0; idx < total; idx++) {
+        dst[idx] = func(src[idx]);
+    }
+#endif
     return ret;
 }
 
@@ -283,9 +312,16 @@ void NNMatrix::applyFunctionInplace(const MatrixFunc& func) {
 
     const int total = row_ * col_;
     float* dataPtr = mem_;
+#if defined(NN_ENABLE_OMP)
+#pragma omp parallel for schedule(static)
     for (int idx = 0; idx < total; ++idx) {
         dataPtr[idx] = func(dataPtr[idx]);
     }
+#else
+    for (int idx = 0; idx < total; ++idx) {
+        dataPtr[idx] = func(dataPtr[idx]);
+    }
+#endif
 }
 
 void NNMatrix::dump(bool showFullLine, int lineSize, bool dumpToFile) const {

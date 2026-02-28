@@ -44,7 +44,12 @@ NNMatrix FCNNLayer::forward(const NNMatrix& input, MatrixFunc activateFunc, bool
 
 NNMatrix FCNNLayer::calculatePrevLayerDA(const NNMatrix& dz) {
     NNMatrix da(weight.getColSize(), 1);
+#if defined(NN_ENABLE_OMP)
+#pragma omp parallel for schedule(static)
     for (int i = 0; i < da.getRowSize(); i++) {
+#else
+    for (int i = 0; i < da.getRowSize(); i++) {
+#endif
         float daElemValue = 0.0f;
         for (int j = 0; j < weight.getRowSize(); j++) {
             daElemValue += dz.get(j, 0) * weight.get(j, i);
@@ -79,7 +84,12 @@ NNMatrixPtrV FCNNLayer::forward(const NNMatrixPtrV& input) {
 
 void FCNNLayer::update(const NNMatrix& dw, const NNMatrix& db, float alpha, float momentum,
                        float weightDecay) {
+#if defined(NN_ENABLE_OMP)
+#pragma omp parallel for schedule(static)
     for (int i = 0; i < weight.getRowSize(); i++) {
+#else
+    for (int i = 0; i < weight.getRowSize(); i++) {
+#endif
         for (int j = 0; j < weight.getColSize(); j++) {
             const float w = weight.get(i, j);
             const float g = dw.get(i, j) + weightDecay * w;

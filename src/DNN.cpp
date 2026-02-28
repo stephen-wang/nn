@@ -26,8 +26,8 @@ DNN::DNN(const std::vector<int>& config) {
 void DNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningRate, float momentum,
                 TrainCallback callback, LayerCallback layerCallback, BatchCallback batchCallback,
                 StopCallback stopCallback, BatchStatsCallback batchStatsCallback) {
-    int e = 0;
-    while (e < epochNum) {
+    int e = 1;
+    while (e <= epochNum) {
         if (stopCallback && stopCallback()) {
             return;
         }
@@ -43,7 +43,7 @@ void DNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
                 return;
             }
             if (b % 200 == 0) {
-                LOG << "Epic " << e << ", batch " << b << " starts" << std::endl;
+                LOG << "Epoc " << e << ", batch " << b << " starts" << std::endl;
             }
             std::vector<NNMatrixPtr> batchX = NNUtils::getBatch(trainData, b, batchSize);
             std::vector<NNMatrixPtr> batchY = NNUtils::getBatch(trainLabel, b, batchSize);
@@ -83,7 +83,7 @@ void DNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
 
         float avgLoss = epochLoss / numBatches;
         float acc = accuracy(e, dataSet.testInput_, dataSet.testLabel_);
-        LOG << "Epic " << e + 1 << "/" << epochNum << ", loss " << avgLoss << ", acc "
+        LOG << "Epic " << e << "/" << epochNum << ", loss " << avgLoss << ", acc "
             << std::setprecision(3) << acc * 100;
         if (callback) {
             callback(e + 1, epochNum, avgLoss, acc);
