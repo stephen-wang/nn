@@ -1,7 +1,6 @@
 #include "CNNGuiUtils.h"
 
 #include "CNN.h"
-#include "CNNConfigBuilder.h"
 #include "DefaultCNNConfig.h"
 #include "NNDatasetManager.h"
 #include "NNUtils.h"
@@ -36,9 +35,6 @@ constexpr int kEpochs = CIFAR100_CNN_EPOCHS;
 constexpr int kBatchSize = CIFAR100_CNN_BATCH_SIZE;
 const float kLearningRate = CIFAR100_CNN_LEARNING_RATE;
 const float kMomentum = CIFAR100_CNN_MOMENTUM;
-
-constexpr int kFlattenSize = CIFAR100_CNN_FC1_IN_SIZE;
-constexpr int kFcHiddenSize = CIFAR100_CNN_FC1_OUT_SIZE;
 
 static float clampf(float value, float lo, float hi) {
     if (value < lo) {
@@ -185,37 +181,9 @@ GLFWwindow* CNNGuiUtils::initWindow() {
 }
 
 void CNNGuiUtils::startTraining(TrainingStats& stats) {
-    auto dataset = NNDatasetManager::loadCifar100();
-
-    // Keep the GUI run small by default, consistent with main.cpp.
-    if (CIFAR100_CNN_MAX_TRAIN_SAMPLES > 0 &&
-        static_cast<int>(dataset.trainLabel_.size()) > CIFAR100_CNN_MAX_TRAIN_SAMPLES) {
-        dataset.trainLabel_.resize(static_cast<size_t>(CIFAR100_CNN_MAX_TRAIN_SAMPLES));
-        dataset.trainInput_.resize(static_cast<size_t>(CIFAR100_CNN_MAX_TRAIN_SAMPLES) *
-                                   static_cast<size_t>(CIFAR100_CNN_IN_CHANNELS));
-    }
-    if (CIFAR100_CNN_MAX_TEST_SAMPLES > 0 &&
-        static_cast<int>(dataset.testLabel_.size()) > CIFAR100_CNN_MAX_TEST_SAMPLES) {
-        dataset.testLabel_.resize(static_cast<size_t>(CIFAR100_CNN_MAX_TEST_SAMPLES));
-        dataset.testInput_.resize(static_cast<size_t>(CIFAR100_CNN_MAX_TEST_SAMPLES) *
-                                  static_cast<size_t>(CIFAR100_CNN_IN_CHANNELS));
-    }
-
-    CNNConfigBuilder builder;
-    auto configs =
-        builder
-            .addConvolution(CIFAR100_CNN_IN_CHANNELS, CIFAR100_CNN_CONV1_OUT_CHANNELS,
-                            CIFAR100_CNN_CONV_FILTER_SIZE, CIFAR100_CNN_CONV_STRIDE_SIZE,
-                            CIFAR100_CNN_CONV_PADDING_SIZE)
-            .addBatchNorm(CIFAR100_CNN_CONV1_OUT_CHANNELS)
-            .addConvolution(CIFAR100_CNN_CONV1_OUT_CHANNELS, CIFAR100_CNN_CONV2_OUT_CHANNELS,
-                            CIFAR100_CNN_CONV_FILTER_SIZE, CIFAR100_CNN_CONV_STRIDE_SIZE,
-                            CIFAR100_CNN_CONV_PADDING_SIZE)
-            .addBatchNorm(CIFAR100_CNN_CONV2_OUT_CHANNELS)
-            .addMaxPooling(CIFAR100_CNN_POOLING_FILTER_SIZE, CIFAR100_CNN_POOLING_STRIDE_SIZE)
-            .addFullyConnected(kFlattenSize, kFcHiddenSize)
-            .addFullyConnected(kFcHiddenSize, kOutputSize)
-            .build();
+    auto dataset = NNDatasetManager::prepareCifar100Dataset(CIFAR100_CNN_MAX_TRAIN_SAMPLES,
+                                                            CIFAR100_CNN_MAX_TEST_SAMPLES);
+    auto configs = NNDatasetManager::buildCifar100CnnConfigs();
 
     auto cnn = CNN(configs);
 

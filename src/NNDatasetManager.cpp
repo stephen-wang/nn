@@ -1,5 +1,7 @@
 #include "NNDatasetManager.h"
 
+#include "CNNConfigBuilder.h"
+#include "DefaultCNNConfig.h"
 #include "NNUtils.h"
 
 #include <cstddef>
@@ -143,6 +145,47 @@ NNDataset NNDatasetManager::loadCifar100() {
 
     return {"cifar-100 dataset", std::move(inputs), std::move(labels), std::move(testInputs),
             std::move(testLabels)};
+}
+
+NNDataset NNDatasetManager::prepareCifar100Dataset(int maxTrainSamples, int maxTestSamples) {
+    auto dataSet = loadCifar100();
+
+    if (maxTrainSamples > 0 && static_cast<int>(dataSet.trainLabel_.size()) > maxTrainSamples) {
+        dataSet.trainLabel_.resize(static_cast<size_t>(maxTrainSamples));
+        dataSet.trainInput_.resize(static_cast<size_t>(maxTrainSamples) *
+                                   static_cast<size_t>(CIFAR100_CNN_IN_CHANNELS));
+    }
+
+    if (maxTestSamples > 0 && static_cast<int>(dataSet.testLabel_.size()) > maxTestSamples) {
+        dataSet.testLabel_.resize(static_cast<size_t>(maxTestSamples));
+        dataSet.testInput_.resize(static_cast<size_t>(maxTestSamples) *
+                                  static_cast<size_t>(CIFAR100_CNN_IN_CHANNELS));
+    }
+
+    return dataSet;
+}
+
+std::vector<CNNConfigPtr> NNDatasetManager::buildCifar100CnnConfigs() {
+    CNNConfigBuilder builder;
+
+    return builder
+        .addConvolution(CIFAR100_CNN_IN_CHANNELS, CIFAR100_CNN_CONV1_OUT_CHANNELS,
+                        CIFAR100_CNN_CONV_FILTER_SIZE, CIFAR100_CNN_CONV_STRIDE_SIZE,
+                        CIFAR100_CNN_CONV_PADDING_SIZE)
+        .addBatchNorm(CIFAR100_CNN_CONV1_OUT_CHANNELS)
+        .addConvolution(CIFAR100_CNN_CONV1_OUT_CHANNELS, CIFAR100_CNN_CONV2_OUT_CHANNELS,
+                        CIFAR100_CNN_CONV_FILTER_SIZE, CIFAR100_CNN_CONV_STRIDE_SIZE,
+                        CIFAR100_CNN_CONV_PADDING_SIZE)
+        .addBatchNorm(CIFAR100_CNN_CONV2_OUT_CHANNELS)
+        .addMaxPooling(CIFAR100_CNN_POOLING_FILTER_SIZE, CIFAR100_CNN_POOLING_STRIDE_SIZE)
+        .addConvolution(CIFAR100_CNN_CONV2_OUT_CHANNELS, CIFAR100_CNN_CONV3_OUT_CHANNELS,
+                        CIFAR100_CNN_CONV_FILTER_SIZE, CIFAR100_CNN_CONV_STRIDE_SIZE,
+                        CIFAR100_CNN_CONV_PADDING_SIZE)
+        .addBatchNorm(CIFAR100_CNN_CONV3_OUT_CHANNELS)
+        .addMaxPooling(CIFAR100_CNN_POOLING_FILTER_SIZE, CIFAR100_CNN_POOLING_STRIDE_SIZE)
+        .addFullyConnected(CIFAR100_CNN_FC1_IN_SIZE, CIFAR100_CNN_FC1_OUT_SIZE)
+        .addFullyConnected(CIFAR100_CNN_FC1_OUT_SIZE, CIFAR100_CNN_OUTPUT_SIZE)
+        .build();
 }
 
 std::vector<std::string> NNDatasetManager::loadCifar100CoarseLabelNames() {
