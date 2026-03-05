@@ -69,5 +69,6 @@ class CNN : public NN { // Simple Convolutional Neural Network
                   float weightDecay, int epoc, int batchNo, int inChannelSize,
                   LayerCallback layerCallback = nullptr);
     float loss(NNMatrixPtrV& Y);
-    float accuracy(int epoc, const NNMatrixPtrV& x_test, const NNMatrixPtrV& y_test);
+    float accuracy(int epoc, const NNMatrixPtrV& x_test, const NNMatrixPtrV& y_test,
+                   int maxSamples = 0);
 };

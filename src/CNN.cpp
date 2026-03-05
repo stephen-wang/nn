@@ -13,6 +13,7 @@
 #include <cmath>
 #include <iomanip>
 #include <memory>
+#include <numeric>
 #include <random>
 
 namespace {
@@ -714,27 +715,33 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
                 BatchCallback batchCallback, StopCallback stopCallback,
                 BatchStatsCallback batchStatsCallback) {
     constexpr int kLogEveryNBatches = 50;
+    constexpr int kValidationSampleSize = 1000; // Use a subset for faster validation.
 
-    // Reduce-on-plateau LR schedule.
-    // NOTE: This uses dataSet.test* as the evaluation set; if you have a proper validation split,
-    // prefer using that here and reserve the true test set for final evaluation.
-    constexpr float kLrDecayFactor = 0.1f;
-    constexpr int kLrPatienceEpochs = 2;
-    constexpr float kMinAccDelta = 0.015f; // absolute accuracy threshold (1.5 percentage point)
-    constexpr float kMinLearningRate = 1.0e-6f;
+    // A new learning rate strategy that combines Cyclical Learning Rate (CLR) with a decay
+    // schedule. The maximum learning rate of the cycle is decayed periodically to stabilize
+    // training in later stages. The cycle length is also increased to make the learning rate
+    // changes more gradual.
+    float clrMaxLr = learningRate;          // Use initial LR as the max boundary, then decay.
+    constexpr float kClrBaseLr = 1.0e-4f;   // The lower boundary.
+    constexpr int kClrStepSizeInEpochs = 8; // Half a cycle in epochs (16-epoch full cycle).
+    constexpr int kLrDecayEpochs = 25;      // Decay max LR every N epochs.
+    constexpr float kLrDecayFactor = 0.5f;  // Decay factor for max LR.
 
-    float bestAccuracy = -1.0f;
-    int epochsWithoutImprovement = 0;
     int e = 1;
-    float curLearningRate = learningRate;
+    int totalBatches = 0;
     while (e <= epochNum) {
         if (stopCallback && stopCallback()) {
             return;
         }
 
+        // Decay max learning rate every kLrDecayEpochs.
+        if (e > 1 && (e - 1) % kLrDecayEpochs == 0) {
+            clrMaxLr *= kLrDecayFactor;
+            LOG << "Decaying max learning rate to " << clrMaxLr << std::endl;
+        }
+
         LOG << "Epoc " << e << "/" << epochNum << ", trainData " << dataSet.trainInput_.size()
-            << ", trainLabel " << dataSet.trainLabel_.size() << ", lr " << curLearningRate
-            << std::endl;
+            << ", trainLabel " << dataSet.trainLabel_.size() << std::endl;
         auto& trainData = dataSet.trainInput_;
         auto& trainLabel = dataSet.trainLabel_;
 
@@ -744,6 +751,8 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
 
         int numBatches = NNUtils::ceilDiv(sampleCount, batchSize);
         float epochLoss = 0.0f;
+
+        const int stepSizeInBatches = kClrStepSizeInEpochs * numBatches;
 
         std::vector<NNMatrixPtr> batchX;
         std::vector<NNMatrixPtr> batchY;
@@ -755,15 +764,22 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
             if (stopCallback && stopCallback()) {
                 return;
             }
-            // if (b % 200 == 0) {
-            //     LOG << "Epoc " << e << ", batch " << b << " starts" << std::endl;
-            // }
+
+            // Calculate CLR for this batch.
+            const float cycle =
+                std::floor(1.0f + static_cast<float>(totalBatches) /
+                                      (2.0f * static_cast<float>(stepSizeInBatches)));
+            const float x =
+                std::abs(static_cast<float>(totalBatches) / static_cast<float>(stepSizeInBatches) -
+                         2.0f * cycle + 1.0f);
+            float curLearningRate =
+                kClrBaseLr + (clrMaxLr - kClrBaseLr) * std::max(0.0f, (1.0f - x));
 
             const int startSample = b * batchSize;
             const int endSample = std::min(startSample + batchSize, sampleCount);
             if (b % kLogEveryNBatches == 0) {
                 LOG << "Epoc " << e << ", batch " << b << " starts, startSample " << startSample
-                    << ", endSample " << endSample << std::endl;
+                    << ", endSample " << endSample << ", lr " << curLearningRate << std::endl;
             }
             if (startSample >= endSample || endSample > sampleCount) {
                 LOG << "CNN::train: no data in current batch" << std::endl;
@@ -917,27 +933,22 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
             if (layerCallback) {
                 layerCallback(e, b, -1, LayerPhase::Idle);
             }
+            totalBatches++;
         }
 
         float avgLoss = numBatches > 0 ? (epochLoss / static_cast<float>(numBatches)) : 0.0f;
-        float acc = accuracy(e, dataSet.testInput_, dataSet.testLabel_);
-        LOG << "Epoc " << e << "/" << epochNum << ", loss " << avgLoss << ", acc "
-            << std::setprecision(3) << acc * 100;
+        float acc = -1.0f;
 
-        if (acc > bestAccuracy + kMinAccDelta) {
-            bestAccuracy = acc;
-            epochsWithoutImprovement = 0;
+        // With CLR, accuracy is for monitoring, not scheduling. Run it less often to speed up
+        // training.
+        if (e % 5 == 0 || e == epochNum) {
+            acc = accuracy(e, dataSet.testInput_, dataSet.testLabel_, kValidationSampleSize);
+            LOG << "Epoc " << e << "/" << epochNum << ", loss " << avgLoss << ", acc "
+                << std::setprecision(3) << acc * 100;
         } else {
-            if (acc > bestAccuracy) {
-                bestAccuracy = acc;
-            }
-            epochsWithoutImprovement += 1;
+            LOG << "Epoc " << e << "/" << epochNum << ", loss " << avgLoss;
         }
 
-        if (epochsWithoutImprovement >= kLrPatienceEpochs && curLearningRate > kMinLearningRate) {
-            curLearningRate = std::max(curLearningRate * kLrDecayFactor, kMinLearningRate);
-            epochsWithoutImprovement = 0;
-        }
         if (callback) {
             callback(e + 1, epochNum, avgLoss, acc);
         }
@@ -959,34 +970,51 @@ float CNN::loss(NNMatrixPtrV& Y) {
     return batchCrossEntropyLoss(lastForwardOutputs_, Y);
 }
 
-float CNN::accuracy(int epoc, const NNMatrixPtrV& x_test, const NNMatrixPtrV& y_test) {
+float CNN::accuracy(int epoc, const NNMatrixPtrV& x_test, const NNMatrixPtrV& y_test,
+                    int maxSamples) {
     if (y_test.empty() || x_test.empty()) {
         return 0.0f;
     }
 
-    const int labelCount = static_cast<int>(y_test.size());
-    const int dataCount = static_cast<int>(x_test.size());
+    const int totalLabelCount = static_cast<int>(y_test.size());
+    const int totalDataCount = static_cast<int>(x_test.size());
 
     int inChannelSize = 1;
-    if (labelCount > 0 && dataCount > 0 && (dataCount % labelCount) == 0) {
-        inChannelSize = dataCount / labelCount;
+    if (totalLabelCount > 0 && totalDataCount > 0 && (totalDataCount % totalLabelCount) == 0) {
+        inChannelSize = totalDataCount / totalLabelCount;
     }
     if (inChannelSize <= 0) {
         inChannelSize = 1;
     }
 
-    if (dataCount != labelCount * inChannelSize) {
-        LOG << "CNN::accuracy size mismatch: x_test=" << dataCount << ", y_test=" << labelCount
-            << ", inferred channels=" << inChannelSize;
+    if (totalDataCount != totalLabelCount * inChannelSize) {
+        LOG << "CNN::accuracy size mismatch: x_test=" << totalDataCount
+            << ", y_test=" << totalLabelCount << ", inferred channels=" << inChannelSize;
         return 0.0f;
     }
 
-    auto preds = forward(epoc, 0, inChannelSize, x_test, false, nullptr);
-    if (preds.size() != y_test.size()) {
+    const int labelCount =
+        (maxSamples > 0) ? std::min(totalLabelCount, maxSamples) : totalLabelCount;
+
+    const NNMatrixPtrV* x_to_use = &x_test;
+    const NNMatrixPtrV* y_to_use = &y_test;
+    NNMatrixPtrV x_test_subset;
+    NNMatrixPtrV y_test_subset;
+
+    if (maxSamples > 0 && labelCount < totalLabelCount) {
+        const int dataCount = labelCount * inChannelSize;
+        x_test_subset.assign(x_test.begin(), x_test.begin() + dataCount);
+        y_test_subset.assign(y_test.begin(), y_test.begin() + labelCount);
+        x_to_use = &x_test_subset;
+        y_to_use = &y_test_subset;
+    }
+
+    auto preds = forward(epoc, 0, inChannelSize, *x_to_use, false, nullptr);
+    if (preds.size() != y_to_use->size()) {
         LOG << "CNN::accuracy pred/label mismatch: pred=" << preds.size()
-            << ", label=" << y_test.size();
+            << ", label=" << y_to_use->size();
         return 0.0f;
     }
 
-    return batchAccuracy(preds, y_test);
+    return batchAccuracy(preds, *y_to_use);
 }

@@ -44,9 +44,9 @@ const int CIFAR100_CNN_FC1_IN_SIZE =
 // FC2: 512 x 1 -> 100 x 1
 const int CIFAR100_CNN_OUTPUT_SIZE = 100;
 
-const int CIFAR100_CNN_EPOCHS = 15;
-const int CIFAR100_CNN_BATCH_SIZE = 64;
-const float CIFAR100_CNN_LEARNING_RATE = 0.02f;
+const int CIFAR100_CNN_EPOCHS = 80;
+const int CIFAR100_CNN_BATCH_SIZE = 32;
+const float CIFAR100_CNN_LEARNING_RATE = 0.01f;
 const float CIFAR100_CNN_MOMENTUM = 0.9f;
 
 // Training regularization / stabilization.
