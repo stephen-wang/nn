@@ -53,7 +53,7 @@ class NN {
         return valid > 0 ? (totalLoss / static_cast<float>(valid)) : 0.0f;
     }
 
-static float batchAccuracy(const std::vector<NNMatrixPtr>& actual,
+    static float batchAccuracy(const std::vector<NNMatrixPtr>& actual,
                                const std::vector<NNMatrixPtr>& expect) {
         if (expect.empty() || actual.size() != expect.size()) {
             return 0.0f;
