@@ -4,6 +4,40 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <istream>
+#include <ostream>
+
+namespace {
+bool writeVector(std::ostream& os, const std::vector<float>& values) {
+    const std::int32_t count = static_cast<std::int32_t>(values.size());
+    os.write(reinterpret_cast<const char*>(&count), sizeof(count));
+    if (!os.good() || count < 0) {
+        return false;
+    }
+    if (count == 0) {
+        return true;
+    }
+    os.write(reinterpret_cast<const char*>(values.data()),
+             static_cast<std::streamsize>(values.size() * sizeof(float)));
+    return os.good();
+}
+
+bool readVector(std::istream& is, std::vector<float>& values) {
+    std::int32_t count = 0;
+    is.read(reinterpret_cast<char*>(&count), sizeof(count));
+    if (!is.good() || count < 0) {
+        return false;
+    }
+    values.assign(static_cast<std::size_t>(count), 0.0f);
+    if (count == 0) {
+        return true;
+    }
+    is.read(reinterpret_cast<char*>(values.data()),
+            static_cast<std::streamsize>(values.size() * sizeof(float)));
+    return is.good();
+}
+} // namespace
 
 BatchNormLayer::BatchNormLayer(int channels, float eps, float runningMomentum)
     : NNLayer(NNLayerType::BatchNorm), channels_(channels), eps_(eps),
@@ -324,4 +358,69 @@ void BatchNormLayer::update(float learningRate, float momentum) {
         gamma_[idx] -= vGamma_[idx];
         beta_[idx] -= vBeta_[idx];
     }
+}
+
+bool BatchNormLayer::saveState(std::ostream& os) const {
+    const std::int32_t channels = channels_;
+    os.write(reinterpret_cast<const char*>(&channels), sizeof(channels));
+    os.write(reinterpret_cast<const char*>(&eps_), sizeof(eps_));
+    os.write(reinterpret_cast<const char*>(&runningMomentum_), sizeof(runningMomentum_));
+    if (!os.good() || channels <= 0) {
+        return false;
+    }
+
+    return writeVector(os, gamma_) && writeVector(os, beta_) && writeVector(os, vGamma_) &&
+           writeVector(os, vBeta_) && writeVector(os, runningMean_) &&
+           writeVector(os, runningVar_) && os.good();
+}
+
+bool BatchNormLayer::loadState(std::istream& is) {
+    std::int32_t channels = 0;
+    float eps = 0.0f;
+    float runningMomentum = 0.0f;
+    is.read(reinterpret_cast<char*>(&channels), sizeof(channels));
+    is.read(reinterpret_cast<char*>(&eps), sizeof(eps));
+    is.read(reinterpret_cast<char*>(&runningMomentum), sizeof(runningMomentum));
+    if (!is.good() || channels <= 0) {
+        return false;
+    }
+
+    if (channels != channels_) {
+        return false;
+    }
+
+    std::vector<float> gamma;
+    std::vector<float> beta;
+    std::vector<float> vGamma;
+    std::vector<float> vBeta;
+    std::vector<float> runningMean;
+    std::vector<float> runningVar;
+    if (!readVector(is, gamma) || !readVector(is, beta) || !readVector(is, vGamma) ||
+        !readVector(is, vBeta) || !readVector(is, runningMean) || !readVector(is, runningVar)) {
+        return false;
+    }
+
+    const std::size_t expected = static_cast<std::size_t>(channels_);
+    if (gamma.size() != expected || beta.size() != expected || vGamma.size() != expected ||
+        vBeta.size() != expected || runningMean.size() != expected ||
+        runningVar.size() != expected) {
+        return false;
+    }
+
+    eps_ = eps;
+    runningMomentum_ = runningMomentum;
+    gamma_ = std::move(gamma);
+    beta_ = std::move(beta);
+    vGamma_ = std::move(vGamma);
+    vBeta_ = std::move(vBeta);
+    runningMean_ = std::move(runningMean);
+    runningVar_ = std::move(runningVar);
+
+    std::fill(batchMean_.begin(), batchMean_.end(), 0.0f);
+    std::fill(batchInvStd_.begin(), batchInvStd_.end(), 1.0f);
+    std::fill(dGamma_.begin(), dGamma_.end(), 0.0f);
+    std::fill(dBeta_.begin(), dBeta_.end(), 0.0f);
+    std::fill(elemCountPerChannel_.begin(), elemCountPerChannel_.end(), 0);
+    xhatBySample_.clear();
+    return true;
 }

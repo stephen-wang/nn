@@ -116,7 +116,9 @@ class ArgHelper {
            << "  --momentum F\n"
            << "  --weight-decay F\n"
            << "  --max-train-samples N\n"
-           << "  --max-test-samples N\n";
+           << "  --max-test-samples N\n"
+           << "  --cnn-checkpoint PATH   CNN checkpoint file path (default: cnn_checkpoint.bin)\n"
+           << "  --cnn-load              Try loading CNN checkpoint before training\n";
     }
 
     // Returns >= 0 when GUI handling is complete and main() should return that code.

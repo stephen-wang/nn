@@ -19,11 +19,16 @@ static void startCnnTraining(const ArgHelper& argHelper) {
 
     const int maxTrain = argHelper.intValue("--max-train-samples", CIFAR100_CNN_MAX_TRAIN_SAMPLES);
     const int maxTest = argHelper.intValue("--max-test-samples", CIFAR100_CNN_MAX_TEST_SAMPLES);
+    const char* checkpointPathArg = argHelper.value("--cnn-checkpoint");
+    const std::string checkpointPath =
+        checkpointPathArg ? std::string(checkpointPathArg) : std::string("cnn_checkpoint.bin");
+    const bool loadBeforeTrain = argHelper.has("--cnn-load");
 
     auto dataSet = NNDatasetManager::prepareCifar100Dataset(maxTrain, maxTest);
     auto configs = NNDatasetManager::buildCifar100CnnConfigs();
 
     auto cnn = CNN(configs);
+    cnn.configurePersistence(checkpointPath, loadBeforeTrain);
     cnn.train(dataSet, epochs, batchSize, lr, momentum, weightDecay);
 }
 
@@ -35,8 +40,8 @@ static void startDnnTraining(const ArgHelper& argHelper) {
     const float momentum = argHelper.floatValue("--momentum", DEFAULT_DNN_MOMENTUM);
     std::vector<int> cfg{DEFAULT_DNN_INPUT_SIZE, DEFAULT_DNN_HIDDEN1_SIZE, DEFAULT_DNN_HIDDEN2_SIZE,
                          DEFAULT_DNN_OUTPUT_SIZE};
-    auto nn = DNN(cfg);
-    nn.train(dataSet, epochs, batchSize, lr, momentum, nullptr, nullptr, nullptr, nullptr);
+    auto dnn = DNN(cfg);
+    dnn.train(dataSet, epochs, batchSize, lr, momentum, nullptr, nullptr, nullptr, nullptr);
 }
 
 int main(int argc, char** argv) {

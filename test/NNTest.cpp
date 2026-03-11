@@ -1,3 +1,4 @@
+#include "CNNSerializationTest.h"
 #include "NNMatrixTest.h"
 #include "NNUtilsTest.h"
 

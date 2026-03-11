@@ -3,6 +3,8 @@
 #include "NNLayer.h"
 #include "NNMatrix.h"
 
+#include <istream>
+#include <ostream>
 #include <vector>
 
 // BatchNorm over convolutional feature maps (per-channel), with learnable gamma/beta.
@@ -26,6 +28,11 @@ class BatchNormLayer : public NNLayer {
 
     // SGD+momentum update for gamma/beta (no weight decay by default).
     void update(float learningRate, float momentum);
+    bool saveState(std::ostream& os) const;
+    bool loadState(std::istream& is);
+
+    float eps() const { return eps_; }
+    float runningMomentum() const { return runningMomentum_; }
 
   private:
     int channels_ = 0;

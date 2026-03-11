@@ -1,7 +1,54 @@
 #include "FCNNLayer.h"
 
 #include <iomanip>
+#include <istream>
+#include <ostream>
 #include <sstream>
+
+namespace {
+bool writeMatrix(std::ostream& os, const NNMatrix& matrix) {
+    const std::int32_t rows = matrix.getRowSize();
+    const std::int32_t cols = matrix.getColSize();
+    os.write(reinterpret_cast<const char*>(&rows), sizeof(rows));
+    os.write(reinterpret_cast<const char*>(&cols), sizeof(cols));
+    if (!os.good() || rows <= 0 || cols <= 0) {
+        return false;
+    }
+    const float* data = matrix.data();
+    if (!data) {
+        return false;
+    }
+    const std::size_t count = static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols);
+    os.write(reinterpret_cast<const char*>(data),
+             static_cast<std::streamsize>(count * sizeof(float)));
+    return os.good();
+}
+
+bool readMatrix(std::istream& is, NNMatrix& matrix) {
+    std::int32_t rows = 0;
+    std::int32_t cols = 0;
+    is.read(reinterpret_cast<char*>(&rows), sizeof(rows));
+    is.read(reinterpret_cast<char*>(&cols), sizeof(cols));
+    if (!is.good() || rows <= 0 || cols <= 0) {
+        return false;
+    }
+
+    NNMatrix loaded(rows, cols, 0.0f);
+    float* data = loaded.data();
+    if (!data) {
+        return false;
+    }
+
+    const std::size_t count = static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols);
+    is.read(reinterpret_cast<char*>(data), static_cast<std::streamsize>(count * sizeof(float)));
+    if (!is.good()) {
+        return false;
+    }
+
+    matrix = std::move(loaded);
+    return true;
+}
+} // namespace
 
 FCNNLayer::FCNNLayer(int inputSize, int outputSize)
     : NNLayer(NNLayerType::FullyConnected), weight(outputSize, inputSize),
@@ -104,6 +151,50 @@ void FCNNLayer::update(const NNMatrix& dw, const NNMatrix& db, float alpha, floa
         vBias.set(i, 0, delta);
         bias.set(i, 0, bias.get(i, 0) - delta);
     }
+}
+
+bool FCNNLayer::saveState(std::ostream& os) const {
+    if (!writeMatrix(os, weight)) {
+        return false;
+    }
+    if (!writeMatrix(os, vWeight)) {
+        return false;
+    }
+    if (!writeMatrix(os, bias)) {
+        return false;
+    }
+    if (!writeMatrix(os, vBias)) {
+        return false;
+    }
+    return os.good();
+}
+
+bool FCNNLayer::loadState(std::istream& is) {
+    NNMatrix newWeight(1, 1, 0.0f);
+    NNMatrix newVWeight(1, 1, 0.0f);
+    NNMatrix newBias(1, 1, 0.0f);
+    NNMatrix newVBias(1, 1, 0.0f);
+
+    if (!readMatrix(is, newWeight) || !readMatrix(is, newVWeight) || !readMatrix(is, newBias) ||
+        !readMatrix(is, newVBias)) {
+        return false;
+    }
+
+    if (newWeight.getRowSize() != weight.getRowSize() ||
+        newWeight.getColSize() != weight.getColSize() ||
+        newVWeight.getRowSize() != vWeight.getRowSize() ||
+        newVWeight.getColSize() != vWeight.getColSize() ||
+        newBias.getRowSize() != bias.getRowSize() || newBias.getColSize() != bias.getColSize() ||
+        newVBias.getRowSize() != vBias.getRowSize() ||
+        newVBias.getColSize() != vBias.getColSize()) {
+        return false;
+    }
+
+    weight = std::move(newWeight);
+    vWeight = std::move(newVWeight);
+    bias = std::move(newBias);
+    vBias = std::move(newVBias);
+    return true;
 }
 
 void FCNNLayer::dump() {

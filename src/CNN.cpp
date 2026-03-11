@@ -11,6 +11,9 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <fstream>
 #include <iomanip>
 #include <memory>
 #include <numeric>
@@ -170,6 +173,30 @@ NNMatrixPtr flattenAndConcatReuse(const NNMatrixPtrV& mats, NNMatrixPtr& reuse) 
         offset += len;
     }
     return reuse;
+}
+
+template <typename T> bool writeScalar(std::ostream& os, const T& value) {
+    os.write(reinterpret_cast<const char*>(&value), sizeof(T));
+    return os.good();
+}
+
+template <typename T> bool readScalar(std::istream& is, T& value) {
+    is.read(reinterpret_cast<char*>(&value), sizeof(T));
+    return is.good();
+}
+
+bool writeLayerType(std::ostream& os, NNLayerType type) {
+    const std::uint8_t v = static_cast<std::uint8_t>(type);
+    return writeScalar(os, v);
+}
+
+bool readLayerType(std::istream& is, NNLayerType& type) {
+    std::uint8_t v = 0;
+    if (!readScalar(is, v)) {
+        return false;
+    }
+    type = static_cast<NNLayerType>(v);
+    return true;
 }
 } // namespace
 
@@ -714,6 +741,15 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
                 float weightDecay, TrainCallback callback, LayerCallback layerCallback,
                 BatchCallback batchCallback, StopCallback stopCallback,
                 BatchStatsCallback batchStatsCallback) {
+    if (!checkpointFilePath_.empty() && loadCheckpointBeforeTrain_) {
+        if (load(checkpointFilePath_)) {
+            LOG << "Loaded CNN checkpoint from " << checkpointFilePath_;
+        } else {
+            LOG << "Failed to load CNN checkpoint from " << checkpointFilePath_
+                << ", training starts from current parameters";
+        }
+    }
+
     constexpr int kLogEveryNBatches = 50;
     constexpr int kValidationSampleSize = 1000; // Use a subset for faster validation.
 
@@ -728,10 +764,12 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
     constexpr float kLrDecayFactor = 0.5f;  // Decay factor for max LR.
 
     int e = 1;
+    bool completedTraining = true;
     int totalBatches = 0;
     while (e <= epochNum) {
         if (stopCallback && stopCallback()) {
-            return;
+            completedTraining = false;
+            break;
         }
 
         // Decay max learning rate every kLrDecayEpochs.
@@ -762,7 +800,8 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
 
         for (int b = 0; b < numBatches; b++) {
             if (stopCallback && stopCallback()) {
-                return;
+                completedTraining = false;
+                break;
             }
 
             // Calculate CLR for this batch.
@@ -936,6 +975,10 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
             totalBatches++;
         }
 
+        if (!completedTraining) {
+            break;
+        }
+
         float avgLoss = numBatches > 0 ? (epochLoss / static_cast<float>(numBatches)) : 0.0f;
         float acc = -1.0f;
 
@@ -953,6 +996,14 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
             callback(e + 1, epochNum, avgLoss, acc);
         }
         e++;
+    }
+
+    if (completedTraining && !checkpointFilePath_.empty()) {
+        if (save(checkpointFilePath_)) {
+            LOG << "Saved CNN checkpoint to " << checkpointFilePath_;
+        } else {
+            LOG << "Failed to save CNN checkpoint to " << checkpointFilePath_;
+        }
     }
 }
 
@@ -1017,4 +1068,160 @@ float CNN::accuracy(int epoc, const NNMatrixPtrV& x_test, const NNMatrixPtrV& y_
     }
 
     return batchAccuracy(preds, *y_to_use);
+}
+
+bool CNN::save(const std::string& filePath) const {
+    std::ofstream os(filePath, std::ios::binary | std::ios::trunc);
+    if (!os.is_open()) {
+        LOG << "CNN::save cannot open file: " << filePath;
+        return false;
+    }
+
+    constexpr char kMagic[8] = {'N', 'N', 'C', 'N', 'N', '1', '\0', '\0'};
+    constexpr std::uint32_t kVersion = 1;
+
+    os.write(kMagic, sizeof(kMagic));
+    if (!writeScalar(os, kVersion)) {
+        return false;
+    }
+
+    const std::uint32_t layerCount = static_cast<std::uint32_t>(layers.size());
+    if (!writeScalar(os, layerCount)) {
+        return false;
+    }
+
+    for (const auto& layer : layers) {
+        if (!layer) {
+            return false;
+        }
+        const NNLayerType type = layer->getLayerType();
+        if (!writeLayerType(os, type)) {
+            return false;
+        }
+
+        switch (type) {
+        case NNLayerType::Convolution: {
+            auto* conv = static_cast<ConvolutionLayer*>(layer.get());
+            if (!conv->saveState(os)) {
+                return false;
+            }
+            break;
+        }
+        case NNLayerType::Pooling: {
+            auto* pool = static_cast<MaxPoolingLayer*>(layer.get());
+            const std::int32_t filterSize = pool->getFilterSize();
+            const std::int32_t stride = pool->getStride();
+            if (!writeScalar(os, filterSize) || !writeScalar(os, stride)) {
+                return false;
+            }
+            break;
+        }
+        case NNLayerType::FullyConnected: {
+            auto* fc = static_cast<FCNNLayer*>(layer.get());
+            if (!fc->saveState(os)) {
+                return false;
+            }
+            break;
+        }
+        case NNLayerType::BatchNorm: {
+            auto* bn = static_cast<BatchNormLayer*>(layer.get());
+            if (!bn->saveState(os)) {
+                return false;
+            }
+            break;
+        }
+        default:
+            return false;
+        }
+    }
+
+    return os.good();
+}
+
+bool CNN::load(const std::string& filePath) {
+    std::ifstream is(filePath, std::ios::binary);
+    if (!is.is_open()) {
+        LOG << "CNN::load cannot open file: " << filePath;
+        return false;
+    }
+
+    char magic[8] = {};
+    is.read(magic, sizeof(magic));
+    constexpr char kMagic[8] = {'N', 'N', 'C', 'N', 'N', '1', '\0', '\0'};
+    if (!is.good() || std::memcmp(magic, kMagic, sizeof(kMagic)) != 0) {
+        LOG << "CNN::load invalid file header";
+        return false;
+    }
+
+    std::uint32_t version = 0;
+    if (!readScalar(is, version) || version != 1) {
+        LOG << "CNN::load unsupported version " << version;
+        return false;
+    }
+
+    std::uint32_t layerCount = 0;
+    if (!readScalar(is, layerCount)) {
+        return false;
+    }
+
+    if (layerCount != layers.size()) {
+        LOG << "CNN::load layer count mismatch: file=" << layerCount << ", model=" << layers.size();
+        return false;
+    }
+
+    for (std::uint32_t i = 0; i < layerCount; ++i) {
+        auto& layer = layers[static_cast<std::size_t>(i)];
+        if (!layer) {
+            return false;
+        }
+
+        NNLayerType fileType = NNLayerType::Unknown;
+        if (!readLayerType(is, fileType)) {
+            return false;
+        }
+        if (fileType != layer->getLayerType()) {
+            LOG << "CNN::load layer type mismatch at index " << i;
+            return false;
+        }
+
+        switch (fileType) {
+        case NNLayerType::Convolution: {
+            auto* conv = static_cast<ConvolutionLayer*>(layer.get());
+            if (!conv->loadState(is)) {
+                return false;
+            }
+            break;
+        }
+        case NNLayerType::Pooling: {
+            std::int32_t filterSize = 0;
+            std::int32_t stride = 0;
+            if (!readScalar(is, filterSize) || !readScalar(is, stride)) {
+                return false;
+            }
+            auto* pool = static_cast<MaxPoolingLayer*>(layer.get());
+            if (filterSize != pool->getFilterSize() || stride != pool->getStride()) {
+                return false;
+            }
+            break;
+        }
+        case NNLayerType::FullyConnected: {
+            auto* fc = static_cast<FCNNLayer*>(layer.get());
+            if (!fc->loadState(is)) {
+                return false;
+            }
+            break;
+        }
+        case NNLayerType::BatchNorm: {
+            auto* bn = static_cast<BatchNormLayer*>(layer.get());
+            if (!bn->loadState(is)) {
+                return false;
+            }
+            break;
+        }
+        default:
+            return false;
+        }
+    }
+
+    return is.good();
 }

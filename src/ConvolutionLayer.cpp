@@ -4,13 +4,47 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <cstring>
+#include <istream>
 #include <memory>
+#include <ostream>
 #include <vector>
 
 #if defined(NN_ENABLE_OMP)
 #include <omp.h>
 #endif
+
+namespace {
+bool writeFloatVector(std::ostream& os, const std::vector<float>& values) {
+    const std::int32_t count = static_cast<std::int32_t>(values.size());
+    os.write(reinterpret_cast<const char*>(&count), sizeof(count));
+    if (!os.good() || count < 0) {
+        return false;
+    }
+    if (count == 0) {
+        return true;
+    }
+    os.write(reinterpret_cast<const char*>(values.data()),
+             static_cast<std::streamsize>(values.size() * sizeof(float)));
+    return os.good();
+}
+
+bool readFloatVector(std::istream& is, std::vector<float>& values) {
+    std::int32_t count = 0;
+    is.read(reinterpret_cast<char*>(&count), sizeof(count));
+    if (!is.good() || count < 0) {
+        return false;
+    }
+    values.assign(static_cast<std::size_t>(count), 0.0f);
+    if (count == 0) {
+        return true;
+    }
+    is.read(reinterpret_cast<char*>(values.data()),
+            static_cast<std::streamsize>(values.size() * sizeof(float)));
+    return is.good();
+}
+} // namespace
 
 ConvolutionLayer::ConvolutionLayer(const ConvolutionLayerConfig& config)
     : NNLayer(NNLayerType::Convolution), inChannelSize(config.getInChannelSize()),
@@ -143,6 +177,131 @@ void ConvolutionLayer::applyGrad(int batchSize, float learningRate, float moment
         vBias[idx] = momentum * vBias[idx] + scaleGrad * gradBias[idx];
         bias[idx] -= vBias[idx];
     }
+}
+
+bool ConvolutionLayer::saveState(std::ostream& os) const {
+    const std::int32_t inChannels = inChannelSize;
+    const std::int32_t outChannels = outChannelSize;
+    const std::int32_t kernel = filterSize;
+    const std::int32_t convStride = stride;
+    const std::int32_t convPadding = padding;
+    const std::int32_t filterCount = static_cast<std::int32_t>(filters.size());
+
+    os.write(reinterpret_cast<const char*>(&inChannels), sizeof(inChannels));
+    os.write(reinterpret_cast<const char*>(&outChannels), sizeof(outChannels));
+    os.write(reinterpret_cast<const char*>(&kernel), sizeof(kernel));
+    os.write(reinterpret_cast<const char*>(&convStride), sizeof(convStride));
+    os.write(reinterpret_cast<const char*>(&convPadding), sizeof(convPadding));
+    os.write(reinterpret_cast<const char*>(&filterCount), sizeof(filterCount));
+    if (!os.good() || filterCount < 0) {
+        return false;
+    }
+
+    for (std::int32_t i = 0; i < filterCount; ++i) {
+        const auto& w = filters[static_cast<std::size_t>(i)];
+        const auto& v = vFilters[static_cast<std::size_t>(i)];
+        if (!w || !v || !w->data() || !v->data()) {
+            return false;
+        }
+
+        const std::int32_t rows = w->getRowSize();
+        const std::int32_t cols = w->getColSize();
+        os.write(reinterpret_cast<const char*>(&rows), sizeof(rows));
+        os.write(reinterpret_cast<const char*>(&cols), sizeof(cols));
+        if (!os.good() || rows <= 0 || cols <= 0 || v->getRowSize() != rows ||
+            v->getColSize() != cols) {
+            return false;
+        }
+
+        const std::size_t elemCount =
+            static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols);
+        os.write(reinterpret_cast<const char*>(w->data()),
+                 static_cast<std::streamsize>(elemCount * sizeof(float)));
+        os.write(reinterpret_cast<const char*>(v->data()),
+                 static_cast<std::streamsize>(elemCount * sizeof(float)));
+        if (!os.good()) {
+            return false;
+        }
+    }
+
+    return writeFloatVector(os, bias) && writeFloatVector(os, vBias) && os.good();
+}
+
+bool ConvolutionLayer::loadState(std::istream& is) {
+    std::int32_t inChannels = 0;
+    std::int32_t outChannels = 0;
+    std::int32_t kernel = 0;
+    std::int32_t convStride = 0;
+    std::int32_t convPadding = 0;
+    std::int32_t filterCount = 0;
+
+    is.read(reinterpret_cast<char*>(&inChannels), sizeof(inChannels));
+    is.read(reinterpret_cast<char*>(&outChannels), sizeof(outChannels));
+    is.read(reinterpret_cast<char*>(&kernel), sizeof(kernel));
+    is.read(reinterpret_cast<char*>(&convStride), sizeof(convStride));
+    is.read(reinterpret_cast<char*>(&convPadding), sizeof(convPadding));
+    is.read(reinterpret_cast<char*>(&filterCount), sizeof(filterCount));
+    if (!is.good()) {
+        return false;
+    }
+
+    if (inChannels != inChannelSize || outChannels != outChannelSize || kernel != filterSize ||
+        convStride != stride || convPadding != padding ||
+        filterCount != static_cast<std::int32_t>(filters.size())) {
+        return false;
+    }
+
+    std::vector<NNMatrixPtr> newFilters;
+    std::vector<NNMatrixPtr> newVFilters;
+    newFilters.reserve(static_cast<std::size_t>(filterCount));
+    newVFilters.reserve(static_cast<std::size_t>(filterCount));
+
+    for (std::int32_t i = 0; i < filterCount; ++i) {
+        std::int32_t rows = 0;
+        std::int32_t cols = 0;
+        is.read(reinterpret_cast<char*>(&rows), sizeof(rows));
+        is.read(reinterpret_cast<char*>(&cols), sizeof(cols));
+        if (!is.good() || rows <= 0 || cols <= 0) {
+            return false;
+        }
+
+        auto w = std::make_shared<NNMatrix>(rows, cols, 0.0f);
+        auto v = std::make_shared<NNMatrix>(rows, cols, 0.0f);
+        float* wData = w ? w->data() : nullptr;
+        float* vData = v ? v->data() : nullptr;
+        if (!wData || !vData) {
+            return false;
+        }
+        const std::size_t elemCount =
+            static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols);
+        is.read(reinterpret_cast<char*>(wData),
+                static_cast<std::streamsize>(elemCount * sizeof(float)));
+        is.read(reinterpret_cast<char*>(vData),
+                static_cast<std::streamsize>(elemCount * sizeof(float)));
+        if (!is.good()) {
+            return false;
+        }
+
+        newFilters.push_back(std::move(w));
+        newVFilters.push_back(std::move(v));
+    }
+
+    std::vector<float> newBias;
+    std::vector<float> newVBias;
+    if (!readFloatVector(is, newBias) || !readFloatVector(is, newVBias)) {
+        return false;
+    }
+    if (newBias.size() != static_cast<std::size_t>(outChannelSize) ||
+        newVBias.size() != static_cast<std::size_t>(outChannelSize)) {
+        return false;
+    }
+
+    filters = std::move(newFilters);
+    vFilters = std::move(newVFilters);
+    bias = std::move(newBias);
+    vBias = std::move(newVBias);
+    zeroGrad();
+    return true;
 }
 
 NNMatrixPtrV ConvolutionLayer::backward(const NNMatrixPtrV& inputs, const NNMatrixPtrV& outputs,

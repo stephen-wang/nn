@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 struct GLFWwindow;
@@ -8,7 +9,8 @@ struct ImVec2;
 
 class CNNGuiUtils {
   public:
-    static int RunTrainingGui();
+    static int RunTrainingGui(const std::string& checkpointFilePath = "cnn_checkpoint.bin",
+                              bool loadBeforeTrain = false);
 
   private:
     struct TrainingStats;

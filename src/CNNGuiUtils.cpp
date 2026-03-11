@@ -918,6 +918,8 @@ struct CNNGuiUtils::TrainingStats {
     std::string currentOutputLabel;
     std::string currentOutputLabelZh;
     std::atomic<bool> stop{false};
+    std::string checkpointFilePath;
+    bool loadCheckpointBeforeTrain = false;
 };
 
 GLFWwindow* CNNGuiUtils::initWindow() {
@@ -963,6 +965,7 @@ void CNNGuiUtils::startTraining(TrainingStats& stats) {
     auto configs = NNDatasetManager::buildCifar100CnnConfigs();
 
     auto cnn = CNN(configs);
+    cnn.configurePersistence(stats.checkpointFilePath, stats.loadCheckpointBeforeTrain);
 
     CNN::TrainCallback callback = [&](int epoch, int totalEpochs, float loss, float accuracy) {
         std::lock_guard<std::mutex> lock(stats.mutex);
@@ -1123,7 +1126,7 @@ void CNNGuiUtils::drawInputImage(ImDrawList* drawList, const ImVec2& origin, con
     drawList->PopClipRect();
 }
 
-int CNNGuiUtils::RunTrainingGui() {
+int CNNGuiUtils::RunTrainingGui(const std::string& checkpointFilePath, bool loadBeforeTrain) {
     GLFWwindow* window = initWindow();
     if (!window) {
         std::cerr << "Failed to initialize GLFW window" << std::endl;
@@ -1140,6 +1143,8 @@ int CNNGuiUtils::RunTrainingGui() {
     ImGui_ImplOpenGL3_Init(glsl_version);
 
     TrainingStats stats;
+    stats.checkpointFilePath = checkpointFilePath;
+    stats.loadCheckpointBeforeTrain = loadBeforeTrain;
     std::thread trainingThread(startTraining, std::ref(stats));
 
     while (!glfwWindowShouldClose(window)) {

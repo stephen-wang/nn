@@ -30,6 +30,8 @@ class CNN : public NN { // Simple Convolutional Neural Network
     // Each entry is an NNMatrixPtrV of size `inChannelSize` used to store augmented
     // channels for a single sample. Allocated on demand and reused across batches/epochs.
     NNMatrixPtrVV augmentPool_;
+    std::string checkpointFilePath_;
+    bool loadCheckpointBeforeTrain_ = false;
 
   public:
     CNN(const std::vector<CNNConfigPtr>& configs);
@@ -60,6 +62,13 @@ class CNN : public NN { // Simple Convolutional Neural Network
                float weightDecay, TrainCallback callback, LayerCallback layerCallback,
                BatchCallback batchCallback, StopCallback stopCallback,
                BatchStatsCallback batchStatsCallback);
+
+    bool save(const std::string& filePath) const;
+    bool load(const std::string& filePath);
+    void configurePersistence(const std::string& checkpointFilePath, bool loadBeforeTrain) {
+        checkpointFilePath_ = checkpointFilePath;
+        loadCheckpointBeforeTrain_ = loadBeforeTrain;
+    }
 
   private:
     std::shared_ptr<NNLayer> buildCNNLayer(const CNNConfig& config);

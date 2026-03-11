@@ -5,6 +5,9 @@
 #include "NNMatrix.h"
 #include "NNUtils.h"
 
+#include <istream>
+#include <ostream>
+
 class FCNNLayer : public NNLayer { // fully connecter neural network layer
   public:
     FCNNLayer(int inputSize = 1, int outputSize = 1);
@@ -17,6 +20,8 @@ class FCNNLayer : public NNLayer { // fully connecter neural network layer
                 float weightDecay = 0.0f);
     int getInputSize() const { return weight.getColSize(); }
     int getOutputSize() const { return weight.getRowSize(); }
+    bool saveState(std::ostream& os) const;
+    bool loadState(std::istream& is);
     void dump();
 
   private:

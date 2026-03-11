@@ -67,6 +67,18 @@ The program expects MNIST files in `mnist/`:
 - `mnist/t10k-images-idx3-ubyte`
 - `mnist/t10k-labels-idx1-ubyte`
 
+## CNN model persistence
+
+`CNN` supports binary serialization of model parameters and optimizer state:
+
+- Save: `cnn.save("model.bin")`
+- Load: `cnn.load("model.bin")`
+
+Notes:
+
+- `load` restores parameters into an already-constructed `CNN`.
+- The target `CNN` must use the same architecture (same layers/shapes/order) as the saved file.
+
 ## Tests (GoogleTest)
 
 The `Makefile` includes a test target that links against GoogleTest installed via Homebrew.

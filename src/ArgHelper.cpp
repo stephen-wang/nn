@@ -19,7 +19,12 @@ int ArgHelper::maybeRunGui(ModelType modelType) const {
     const bool requestGui = guiRequested(defaultGui);
     if (requestGui) {
         if (modelType == ModelType::CNN) {
-            return CNNGuiUtils::RunTrainingGui();
+            const char* checkpointPathArg = value("--cnn-checkpoint");
+            const std::string checkpointPath = checkpointPathArg
+                                                   ? std::string(checkpointPathArg)
+                                                   : std::string("cnn_checkpoint.bin");
+            const bool loadBeforeTrain = has("--cnn-load");
+            return CNNGuiUtils::RunTrainingGui(checkpointPath, loadBeforeTrain);
         }
         return DNNGuiUtils::RunTrainingGui();
     }

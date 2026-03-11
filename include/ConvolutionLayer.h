@@ -4,6 +4,8 @@
 #include "NNLayer.h"
 #include "NNMatrix.h"
 
+#include <istream>
+#include <ostream>
 #include <vector>
 
 class ConvolutionLayer : public NNLayer { // Convolution Layer
@@ -54,6 +56,14 @@ class ConvolutionLayer : public NNLayer { // Convolution Layer
     void applyGrad(int batchSize, float learningRate, float momentum, float weightDecay = 0.0f);
     NNMatrixPtrV backward(const NNMatrixPtrV& inputs, const NNMatrixPtrV& outputs,
                           const NNMatrixPtrV& dOutputs);
+    bool saveState(std::ostream& os) const;
+    bool loadState(std::istream& is);
+
+    int getInChannelSize() const { return inChannelSize; }
+    int getOutChannelSize() const { return outChannelSize; }
+    int getFilterSize() const { return filterSize; }
+    int getStride() const { return stride; }
+    int getPadding() const { return padding; }
 
   private:
     const std::string TAG = "ConvolutionLayer";
