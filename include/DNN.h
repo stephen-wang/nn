@@ -12,6 +12,8 @@
 class DNN : public NN { // Simple Deep Neural Network
   private:
     const std::string TAG = "DNN";
+    std::string checkpointFilePath_;
+    bool loadCheckpointBeforeTrain_ = false;
 
   public:
     DNN(const std::vector<int>& config);
@@ -30,6 +32,12 @@ class DNN : public NN { // Simple Deep Neural Network
                TrainCallback callback = nullptr, LayerCallback layerCallback = nullptr,
                BatchCallback batchCallback = nullptr, StopCallback stopCallback = nullptr,
                BatchStatsCallback batchStatsCallback = nullptr);
+    bool save(const std::string& filePath) const;
+    bool load(const std::string& filePath);
+    void configurePersistence(const std::string& checkpointFilePath, bool loadBeforeTrain) {
+        checkpointFilePath_ = checkpointFilePath;
+        loadCheckpointBeforeTrain_ = loadBeforeTrain;
+    }
 
   private:
     NNMatrix forward(int epic, int batchNo, const std::vector<NNMatrixPtr>& X,

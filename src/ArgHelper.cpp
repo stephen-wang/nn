@@ -26,7 +26,11 @@ int ArgHelper::maybeRunGui(ModelType modelType) const {
             const bool loadBeforeTrain = has("--cnn-load");
             return CNNGuiUtils::RunTrainingGui(checkpointPath, loadBeforeTrain);
         }
-        return DNNGuiUtils::RunTrainingGui();
+        const char* checkpointPathArg = value("--dnn-checkpoint");
+        const std::string checkpointPath =
+            checkpointPathArg ? std::string(checkpointPathArg) : std::string("dnn_checkpoint.bin");
+        const bool loadBeforeTrain = has("--dnn-load");
+        return DNNGuiUtils::RunTrainingGui(checkpointPath, loadBeforeTrain);
     }
 
     return -1;

@@ -3,9 +3,24 @@
 #include "NNFunctions.h"
 #include "NNUtils.h"
 
+#include <cstdint>
+#include <cstring>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <math.h>
+
+namespace {
+template <typename T> bool writeScalar(std::ostream& os, const T& value) {
+    os.write(reinterpret_cast<const char*>(&value), sizeof(T));
+    return os.good();
+}
+
+template <typename T> bool readScalar(std::istream& is, T& value) {
+    is.read(reinterpret_cast<char*>(&value), sizeof(T));
+    return is.good();
+}
+} // namespace
 
 DNN::DNN(const std::vector<int>& config) {
     int configSize = config.size();
@@ -26,10 +41,21 @@ DNN::DNN(const std::vector<int>& config) {
 void DNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningRate, float momentum,
                 TrainCallback callback, LayerCallback layerCallback, BatchCallback batchCallback,
                 StopCallback stopCallback, BatchStatsCallback batchStatsCallback) {
+    if (!checkpointFilePath_.empty() && loadCheckpointBeforeTrain_) {
+        if (load(checkpointFilePath_)) {
+            LOG << "Loaded DNN checkpoint from " << checkpointFilePath_;
+        } else {
+            LOG << "Failed to load DNN checkpoint from " << checkpointFilePath_
+                << ", training starts from current parameters";
+        }
+    }
+
     int e = 1;
+    bool completedTraining = true;
     while (e <= epochNum) {
         if (stopCallback && stopCallback()) {
-            return;
+            completedTraining = false;
+            break;
         }
         LOG << "Epic " << e << std::endl;
         auto& trainData = dataSet.trainInput_;
@@ -40,7 +66,8 @@ void DNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
         float epochLoss = 0.0f;
         for (int b = 0; b < numBatches; b++) {
             if (stopCallback && stopCallback()) {
-                return;
+                completedTraining = false;
+                break;
             }
             if (b % 200 == 0) {
                 LOG << "Epoc " << e << ", batch " << b << " starts" << std::endl;
@@ -81,6 +108,10 @@ void DNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
             }
         }
 
+        if (!completedTraining) {
+            break;
+        }
+
         float avgLoss = epochLoss / numBatches;
         float acc = accuracy(e, dataSet.testInput_, dataSet.testLabel_);
         LOG << "Epic " << e << "/" << epochNum << ", loss " << avgLoss << ", acc "
@@ -90,6 +121,98 @@ void DNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
         }
         e++;
     }
+
+    if (completedTraining && !checkpointFilePath_.empty()) {
+        if (save(checkpointFilePath_)) {
+            LOG << "Saved DNN checkpoint to " << checkpointFilePath_;
+        } else {
+            LOG << "Failed to save DNN checkpoint to " << checkpointFilePath_;
+        }
+    }
+}
+
+bool DNN::save(const std::string& filePath) const {
+    std::ofstream os(filePath, std::ios::binary | std::ios::trunc);
+    if (!os.is_open()) {
+        LOG << "DNN::save cannot open file: " << filePath;
+        return false;
+    }
+
+    constexpr char kMagic[8] = {'N', 'N', 'D', 'N', 'N', '1', '\0', '\0'};
+    constexpr std::uint32_t kVersion = 1;
+
+    os.write(kMagic, sizeof(kMagic));
+    if (!writeScalar(os, kVersion)) {
+        return false;
+    }
+
+    const std::uint32_t layerCount = static_cast<std::uint32_t>(layers.size());
+    if (!writeScalar(os, layerCount)) {
+        return false;
+    }
+
+    for (const auto& layer : layers) {
+        const std::int32_t inputSize = layer.getInputSize();
+        const std::int32_t outputSize = layer.getOutputSize();
+        if (!writeScalar(os, inputSize) || !writeScalar(os, outputSize)) {
+            return false;
+        }
+        if (!layer.saveState(os)) {
+            return false;
+        }
+    }
+
+    return os.good();
+}
+
+bool DNN::load(const std::string& filePath) {
+    std::ifstream is(filePath, std::ios::binary);
+    if (!is.is_open()) {
+        LOG << "DNN::load cannot open file: " << filePath;
+        return false;
+    }
+
+    char magic[8] = {};
+    is.read(magic, sizeof(magic));
+    constexpr char kMagic[8] = {'N', 'N', 'D', 'N', 'N', '1', '\0', '\0'};
+    if (!is.good() || std::memcmp(magic, kMagic, sizeof(kMagic)) != 0) {
+        LOG << "DNN::load invalid file header";
+        return false;
+    }
+
+    std::uint32_t version = 0;
+    if (!readScalar(is, version) || version != 1) {
+        LOG << "DNN::load unsupported version " << version;
+        return false;
+    }
+
+    std::uint32_t layerCount = 0;
+    if (!readScalar(is, layerCount)) {
+        return false;
+    }
+    if (layerCount != layers.size()) {
+        LOG << "DNN::load layer count mismatch: file=" << layerCount << ", model=" << layers.size();
+        return false;
+    }
+
+    for (std::size_t i = 0; i < layers.size(); ++i) {
+        std::int32_t inputSize = 0;
+        std::int32_t outputSize = 0;
+        if (!readScalar(is, inputSize) || !readScalar(is, outputSize)) {
+            return false;
+        }
+
+        if (inputSize != layers[i].getInputSize() || outputSize != layers[i].getOutputSize()) {
+            LOG << "DNN::load layer shape mismatch at index " << i;
+            return false;
+        }
+
+        if (!layers[i].loadState(is)) {
+            return false;
+        }
+    }
+
+    return is.good();
 }
 
 NNMatrix DNN::forward(int epic, int batchNo, const std::vector<NNMatrixPtr>& X,

@@ -38,9 +38,14 @@ static void startDnnTraining(const ArgHelper& argHelper) {
     const int batchSize = std::max(1, argHelper.intValue("--batch-size", DEFAULT_DNN_BATCH_SIZE));
     const float lr = argHelper.floatValue("--learning-rate", DEFAULT_DNN_LEARNING_RATE);
     const float momentum = argHelper.floatValue("--momentum", DEFAULT_DNN_MOMENTUM);
+    const char* checkpointPathArg = argHelper.value("--dnn-checkpoint");
+    const std::string checkpointPath =
+        checkpointPathArg ? std::string(checkpointPathArg) : std::string("dnn_checkpoint.bin");
+    const bool loadBeforeTrain = argHelper.has("--dnn-load");
     std::vector<int> cfg{DEFAULT_DNN_INPUT_SIZE, DEFAULT_DNN_HIDDEN1_SIZE, DEFAULT_DNN_HIDDEN2_SIZE,
                          DEFAULT_DNN_OUTPUT_SIZE};
     auto dnn = DNN(cfg);
+    dnn.configurePersistence(checkpointPath, loadBeforeTrain);
     dnn.train(dataSet, epochs, batchSize, lr, momentum, nullptr, nullptr, nullptr, nullptr);
 }
 

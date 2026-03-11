@@ -79,6 +79,18 @@ Notes:
 - `load` restores parameters into an already-constructed `CNN`.
 - The target `CNN` must use the same architecture (same layers/shapes/order) as the saved file.
 
+## DNN model persistence
+
+`DNN` also supports binary serialization of model parameters and optimizer state:
+
+- Save: `dnn.save("model.bin")`
+- Load: `dnn.load("model.bin")`
+
+Notes:
+
+- `load` restores parameters into an already-constructed `DNN`.
+- The target `DNN` must use the same architecture (same layers/shapes/order) as the saved file.
+
 ## Tests (GoogleTest)
 
 The `Makefile` includes a test target that links against GoogleTest installed via Homebrew.

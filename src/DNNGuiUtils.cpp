@@ -51,6 +51,8 @@ struct DNNGuiUtils::TrainingStats {
     int currentOutputIndex = -1;
     float currentOutputValue = 0.0f;
     std::atomic<bool> stop{false};
+    std::string checkpointFilePath;
+    bool loadCheckpointBeforeTrain = false;
 };
 
 GLFWwindow* DNNGuiUtils::initWindow() {
@@ -80,6 +82,7 @@ void DNNGuiUtils::startTraining(TrainingStats& stats) {
 
     std::vector<int> cfg{INPUT_SIZE, HIDDEN1_SIZE, HIDDEN2_SIZE, OUTPUT_SIZE};
     auto nn = DNN(cfg);
+    nn.configurePersistence(stats.checkpointFilePath, stats.loadCheckpointBeforeTrain);
 
     DNN::TrainCallback callback = [&](int epoch, int totalEpochs, float loss, float accuracy) {
         std::lock_guard<std::mutex> lock(stats.mutex);
@@ -149,7 +152,7 @@ void DNNGuiUtils::startTraining(TrainingStats& stats) {
 }
 
 void DNNGuiUtils::drawInputImage(ImDrawList* drawList, const ImVec2& origin, const ImVec2& size,
-                                const std::vector<float>& image) {
+                                 const std::vector<float>& image) {
     const int width = 28;
     const int height = 28;
     if (image.size() < static_cast<size_t>(width * height)) {
@@ -379,7 +382,7 @@ static void drawDnnTopology(ImDrawList* drawList, const ImVec2& origin, const Im
     }
 }
 
-int DNNGuiUtils::RunTrainingGui() {
+int DNNGuiUtils::RunTrainingGui(const std::string& checkpointFilePath, bool loadBeforeTrain) {
     GLFWwindow* window = initWindow();
     if (!window) {
         std::cerr << "Failed to initialize GLFW window" << std::endl;
@@ -395,6 +398,8 @@ int DNNGuiUtils::RunTrainingGui() {
     ImGui_ImplOpenGL3_Init(glsl_version);
 
     TrainingStats stats;
+    stats.checkpointFilePath = checkpointFilePath;
+    stats.loadCheckpointBeforeTrain = loadBeforeTrain;
     std::thread trainingThread(startTraining, std::ref(stats));
 
     while (!glfwWindowShouldClose(window)) {
