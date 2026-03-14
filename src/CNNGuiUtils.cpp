@@ -19,14 +19,13 @@
 #include <utility>
 #include <vector>
 
-#define GL_SILENCE_DEPRECATION
 #define GLFW_INCLUDE_NONE
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 #include "imgui.h"
 
 #include <GLFW/glfw3.h>
-#include <OpenGL/gl3.h>
+#include <OpenGL/gl.h>
 
 namespace {
 void configureGuiFonts() {
@@ -60,12 +59,6 @@ void configureGuiFonts() {
     io.Fonts->AddFontDefault();
 }
 
-inline float toDisplayUnit(float value) {
-    if (value < 0.0f || value > 1.0f) {
-        value = (value + 1.0f) * 0.5f;
-    }
-    return value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
-}
 constexpr int kImageSide = 32;
 constexpr int kInputSize = kImageSide * kImageSide;
 constexpr int kInChannels = CIFAR100_CNN_IN_CHANNELS;
@@ -75,6 +68,44 @@ constexpr int kEpochs = CIFAR100_CNN_EPOCHS;
 constexpr int kBatchSize = CIFAR100_CNN_BATCH_SIZE;
 const float kLearningRate = CIFAR100_CNN_LEARNING_RATE;
 const float kMomentum = CIFAR100_CNN_MOMENTUM;
+constexpr float kInputPreviewTargetSide = 64.0f;
+
+static void drawInputImage(ImDrawList* drawList, const ImVec2& origin, const ImVec2& size,
+                           const std::vector<unsigned char>& image) {
+    if (image.size() < static_cast<size_t>(kImageSide * kImageSide * kInChannels)) {
+        drawList->AddText(origin, IM_COL32(200, 200, 210, 255), "Waiting for batch...");
+        return;
+    }
+
+    const float targetScale = std::floor(kInputPreviewTargetSide / static_cast<float>(kImageSide));
+    const float maxScaleX = size.x / static_cast<float>(kImageSide);
+    const float maxScaleY = size.y / static_cast<float>(kImageSide);
+    float scale = std::floor(std::min(std::min(maxScaleX, maxScaleY), targetScale));
+    if (scale < 1.0f) {
+        scale = 1.0f;
+    }
+
+    const float imgW = scale * static_cast<float>(kImageSide);
+    const float imgH = scale * static_cast<float>(kImageSide);
+    const float offsetX = std::floor(origin.x + (size.x - imgW) * 0.5f);
+    const float offsetY = std::floor(origin.y + (size.y - imgH) * 0.5f);
+
+    drawList->PushClipRect(origin, ImVec2(origin.x + size.x, origin.y + size.y), true);
+
+    for (int y = 0; y < kImageSide; ++y) {
+        for (int x = 0; x < kImageSide; ++x) {
+            const size_t base = static_cast<size_t>((y * kImageSide + x) * kInChannels);
+            const ImU32 color = IM_COL32(image[base], image[base + 1], image[base + 2], 255);
+            const float x0 = offsetX + static_cast<float>(x) * scale;
+            const float y0 = offsetY + static_cast<float>(y) * scale;
+            drawList->AddRectFilled(ImVec2(x0, y0), ImVec2(x0 + scale, y0 + scale), color);
+        }
+    }
+
+    drawList->AddRect(ImVec2(offsetX, offsetY), ImVec2(offsetX + imgW, offsetY + imgH),
+                      IM_COL32(80, 90, 110, 255));
+    drawList->PopClipRect();
+}
 
 static std::string translateCifar100FineLabelToChinese(const std::string& label) {
     static const std::array<std::pair<const char*, const char*>, 100> kLabelMap = {{
@@ -270,7 +301,8 @@ static void drawInputLayerGlyph(ImDrawList* drawList, const ImVec2& center, ImU3
         const float dx = static_cast<float>(layer - 1) * diagonalStep;
         const float dy = static_cast<float>(layer - 1) * diagonalStep;
         const ImVec2 topLeft(center.x - side * 0.5f + dx, center.y - side * 0.5f + dy);
-        drawSplitSquare(drawList, topLeft, side, color, borderColor, 4);
+        const bool isFrontLayer = (layer == 0);
+        drawSplitSquare(drawList, topLeft, side, color, borderColor, isFrontLayer ? 32 : 0);
     }
 }
 
@@ -916,7 +948,7 @@ struct CNNGuiUtils::TrainingStats {
     std::atomic<bool> done{false};
     std::atomic<int> activeLayer{-1};
     std::atomic<int> activePhase{0};
-    std::vector<float> currentImage;
+    std::vector<unsigned char> currentImageU8;
     std::vector<std::string> cifarFineLabelNames;
     std::vector<std::string> cifarFineLabelNamesZh;
     int currentOutputIndex = -1;
@@ -994,8 +1026,8 @@ void CNNGuiUtils::startTraining(TrainingStats& stats) {
         stats.activePhase.store(static_cast<int>(phase));
     };
 
-    CNN::BatchCallback batchCallback = [&](int epoch, int batch, const NNMatrixPtrV& input,
-                                           const NNMatrix& output) {
+    CNN::BatchCallback batchCallback = [&](int epoch, int batch, int sampleIndex,
+                                           const NNMatrixPtrV& input, const NNMatrix& output) {
         (void) epoch;
         std::lock_guard<std::mutex> lock(stats.mutex);
         if (batch % 10 != 0) {
@@ -1005,31 +1037,23 @@ void CNNGuiUtils::startTraining(TrainingStats& stats) {
             return;
         }
 
-        // Keep RGB channels for colorful CIFAR preview.
-        stats.currentImage.assign(static_cast<size_t>(kInputSize * kInChannels), 0.0f);
-        if (static_cast<int>(input.size()) >= kInChannels && input[0] && input[1] && input[2] &&
-            input[0]->getRowSize() == kImageSide && input[0]->getColSize() == kImageSide &&
-            input[1]->getRowSize() == kImageSide && input[1]->getColSize() == kImageSide &&
-            input[2]->getRowSize() == kImageSide && input[2]->getColSize() == kImageSide) {
+        if (sampleIndex >= 0 &&
+            static_cast<size_t>(sampleIndex) < dataset.trainPreviewBytes_.size() &&
+            dataset.trainPreviewBytes_[static_cast<size_t>(sampleIndex)].size() ==
+                static_cast<size_t>(kInputSize * kInChannels)) {
+            const auto& raw = dataset.trainPreviewBytes_[static_cast<size_t>(sampleIndex)];
+            stats.currentImageU8.assign(static_cast<size_t>(kInputSize * kInChannels), 0);
             for (int r = 0; r < kImageSide; ++r) {
                 for (int c = 0; c < kImageSide; ++c) {
-                    const size_t base = static_cast<size_t>((r * kImageSide + c) * kInChannels);
-                    stats.currentImage[base] = toDisplayUnit(input[0]->get(r, c));
-                    stats.currentImage[base + 1] = toDisplayUnit(input[1]->get(r, c));
-                    stats.currentImage[base + 2] = toDisplayUnit(input[2]->get(r, c));
+                    const int idx = r * kImageSide + c;
+                    const size_t dst = static_cast<size_t>(idx * kInChannels);
+                    stats.currentImageU8[dst] = raw[static_cast<size_t>(idx)];
+                    stats.currentImageU8[dst + 1] = raw[static_cast<size_t>(kInputSize + idx)];
+                    stats.currentImageU8[dst + 2] = raw[static_cast<size_t>(2 * kInputSize + idx)];
                 }
             }
-        } else {
-            stats.currentImage.assign(static_cast<size_t>(kInputSize), 0.0f);
-            const auto& m = input[0];
-            if (m->getRowSize() == kImageSide && m->getColSize() == kImageSide) {
-                for (int r = 0; r < kImageSide; ++r) {
-                    for (int c = 0; c < kImageSide; ++c) {
-                        stats.currentImage[static_cast<size_t>(r * kImageSide + c)] =
-                            toDisplayUnit(m->get(r, c));
-                    }
-                }
-            }
+        } else if (input.empty() || !input[0]) {
+            return;
         }
 
         stats.currentOutputIndex = output.getIndexOfColMax(0);
@@ -1084,54 +1108,6 @@ void CNNGuiUtils::startTraining(TrainingStats& stats) {
     stats.activeLayer.store(-1);
     stats.activePhase.store(static_cast<int>(CNN::LayerPhase::Idle));
     stats.done.store(true);
-}
-
-void CNNGuiUtils::drawInputImage(ImDrawList* drawList, const ImVec2& origin, const ImVec2& size,
-                                 const std::vector<float>& image) {
-    const int width = kImageSide;
-    const int height = kImageSide;
-    const size_t grayPixelCount = static_cast<size_t>(width * height);
-    const size_t rgbPixelCount = grayPixelCount * static_cast<size_t>(kInChannels);
-    const bool hasRgb = image.size() >= rgbPixelCount;
-    if (!hasRgb && image.size() < grayPixelCount) {
-        drawList->AddText(origin, IM_COL32(200, 200, 210, 255), "Waiting for batch...");
-        return;
-    }
-
-    const float maxScaleX = size.x / width;
-    const float maxScaleY = size.y / height;
-    const float fitScale = std::min(maxScaleX, maxScaleY);
-    const float scale = fitScale < 2.0f ? fitScale : 2.0f;
-    const float imgW = scale * width;
-    const float imgH = scale * height;
-    const float offsetX = origin.x + (size.x - imgW) * 0.5f;
-    const float offsetY = origin.y + (size.y - imgH) * 0.5f;
-
-    drawList->PushClipRect(origin, ImVec2(origin.x + size.x, origin.y + size.y), true);
-
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            ImU32 color = IM_COL32(0, 0, 0, 255);
-            if (hasRgb) {
-                const size_t base = static_cast<size_t>((y * width + x) * kInChannels);
-                const int r = static_cast<int>(clampf(image[base], 0.0f, 1.0f) * 255.0f);
-                const int g = static_cast<int>(clampf(image[base + 1], 0.0f, 1.0f) * 255.0f);
-                const int b = static_cast<int>(clampf(image[base + 2], 0.0f, 1.0f) * 255.0f);
-                color = IM_COL32(r, g, b, 255);
-            } else {
-                const float value = image[static_cast<size_t>(y * width + x)];
-                const int intensity = static_cast<int>(clampf(value, 0.0f, 1.0f) * 255.0f);
-                color = IM_COL32(intensity, intensity, intensity, 255);
-            }
-            const float x0 = offsetX + x * scale;
-            const float y0 = offsetY + y * scale;
-            drawList->AddRectFilled(ImVec2(x0, y0), ImVec2(x0 + scale, y0 + scale), color);
-        }
-    }
-
-    drawList->AddRect(ImVec2(offsetX, offsetY), ImVec2(offsetX + imgW, offsetY + imgH),
-                      IM_COL32(80, 90, 110, 255));
-    drawList->PopClipRect();
 }
 
 int CNNGuiUtils::RunTrainingGui(const std::string& checkpointFilePath, bool loadBeforeTrain,
@@ -1250,18 +1226,23 @@ int CNNGuiUtils::RunTrainingGui(const std::string& checkpointFilePath, bool load
         ImGui::Text("Training input");
         ImGui::SetWindowFontScale(1.0f);
         ImGui::PopStyleColor();
-        ImVec2 imgPos = ImGui::GetCursorScreenPos();
-        ImVec2 imgSize = ImGui::GetContentRegionAvail();
-        ImGui::InvisibleButton("batch_input_canvas", imgSize);
-        ImDrawList* imgDraw = ImGui::GetWindowDrawList();
-        imgDraw->AddRectFilled(imgPos, ImVec2(imgPos.x + imgSize.x, imgPos.y + imgSize.y),
-                               IM_COL32(18, 20, 26, 255));
+        ImGui::Spacing();
+
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(18, 20, 26, 255));
+        ImGui::BeginChild("ImageContainer", ImGui::GetContentRegionAvail(), true);
+
+        const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
+        const ImVec2 imageSize = ImGui::GetContentRegionAvail();
+        ImDrawList* imageDrawList = ImGui::GetWindowDrawList();
         {
             std::lock_guard<std::mutex> lock(stats.mutex);
-            drawInputImage(imgDraw, imgPos, imgSize, stats.currentImage);
+            drawInputImage(imageDrawList, imageOrigin, imageSize, stats.currentImageU8);
         }
-        imgDraw->AddRect(imgPos, ImVec2(imgPos.x + imgSize.x, imgPos.y + imgSize.y),
-                         IM_COL32(70, 80, 90, 255));
+        ImGui::InvisibleButton("input_image_canvas", imageSize);
+
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+
         ImGui::EndChild();
 
         ImGui::SameLine();
@@ -1307,14 +1288,8 @@ int CNNGuiUtils::RunTrainingGui(const std::string& checkpointFilePath, bool load
                           IM_COL32(70, 80, 90, 255));
         int activeLayer = stats.activeLayer.load();
         int activePhase = stats.activePhase.load();
-        const bool done = stats.done.load();
-        if (done) {
-            activeLayer = -1;
-            activePhase = static_cast<int>(CNN::LayerPhase::Idle);
-        }
-        const double conv1AnimTimeSec = done ? -1.0 : ImGui::GetTime();
         drawCnnTopology(drawList, canvasPos, canvasSize, activeLayer, activePhase,
-                        conv1AnimTimeSec);
+                        ImGui::GetTime());
         ImGui::EndChild();
 
         ImGui::End();
@@ -1326,14 +1301,12 @@ int CNNGuiUtils::RunTrainingGui(const std::string& checkpointFilePath, bool load
         glClearColor(0.1f, 0.1f, 0.12f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
         glfwSwapBuffers(window);
     }
 
     stats.stop.store(true);
-
-    if (trainingThread.joinable()) {
-        trainingThread.join();
-    }
+    trainingThread.join();
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();

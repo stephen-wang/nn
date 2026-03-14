@@ -275,3 +275,76 @@ NNUtils::ShuffleSampleInfo NNUtils::shuffleSamples(std::vector<NNMatrixPtr>& inp
 
     return info;
 }
+
+NNUtils::ShuffleSampleInfo
+NNUtils::shuffleSamples(std::vector<NNMatrixPtr>& input, std::vector<NNMatrixPtr>& label,
+                        std::vector<std::vector<unsigned char>>& previewBytes) {
+    const int dataCount = static_cast<int>(input.size());
+    const int labelCount = static_cast<int>(label.size());
+
+    ShuffleSampleInfo info;
+    info.sampleCount = labelCount;
+
+    if (labelCount > 0 && dataCount > 0 && (dataCount % labelCount) == 0) {
+        info.inChannelSize = dataCount / labelCount;
+    } else {
+        info.inChannelSize = 1;
+    }
+    if (info.inChannelSize <= 0) {
+        info.inChannelSize = 1;
+    }
+
+    if (info.sampleCount <= 0 && dataCount > 0) {
+        info.sampleCount = dataCount / info.inChannelSize;
+    }
+
+    if (info.sampleCount > 0 && dataCount != info.sampleCount * info.inChannelSize) {
+        LOG << "shuffleSamples size mismatch: input=" << dataCount << ", label=" << labelCount
+            << ", inferred channels=" << info.inChannelSize << ". Falling back to channelSize=1.";
+        info.inChannelSize = 1;
+        info.sampleCount = labelCount;
+    }
+
+    if (dataCount == 0 || info.sampleCount <= 0) {
+        return info;
+    }
+
+    const bool previewAligned =
+        previewBytes.empty() || static_cast<int>(previewBytes.size()) == info.sampleCount;
+
+    if (info.inChannelSize == 1 && !label.empty()) {
+        const size_t n = input.size();
+        for (size_t i = n - 1; i > 0; --i) {
+            std::uniform_int_distribution<size_t> dist(0, i);
+            const size_t j = dist(rng());
+            std::swap(input[i], input[j]);
+            std::swap(label[i], label[j]);
+            if (previewAligned && !previewBytes.empty()) {
+                std::swap(previewBytes[i], previewBytes[j]);
+            }
+        }
+        return info;
+    }
+
+    const int ch = info.inChannelSize;
+    for (int s = info.sampleCount - 1; s > 0; --s) {
+        std::uniform_int_distribution<int> dist(0, s);
+        const int j = dist(rng());
+        if (j == s) {
+            continue;
+        }
+        if (!label.empty()) {
+            std::swap(label[static_cast<size_t>(s)], label[static_cast<size_t>(j)]);
+        }
+        if (previewAligned && !previewBytes.empty()) {
+            std::swap(previewBytes[static_cast<size_t>(s)], previewBytes[static_cast<size_t>(j)]);
+        }
+        const int baseS = s * ch;
+        const int baseJ = j * ch;
+        for (int c = 0; c < ch; ++c) {
+            std::swap(input[static_cast<size_t>(baseS + c)], input[static_cast<size_t>(baseJ + c)]);
+        }
+    }
+
+    return info;
+}

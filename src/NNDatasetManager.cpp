@@ -31,8 +31,9 @@ static const char* CIFAR100_FINE_LABEL_NAMES_FILE =
 
 const std::string NNDatasetManager::TAG = "NNFunctions";
 
-void NNDatasetManager::readCifar100BinaryFile(const std::string& filePath, NNMatrixPtrV& data,
-                                              NNMatrixPtrV& labels) {
+void NNDatasetManager::readCifar100BinaryFile(
+    const std::string& filePath, NNMatrixPtrV& data, NNMatrixPtrV& labels,
+    std::vector<std::vector<unsigned char>>& previewBytes) {
     // CIFAR-100 binary format:
     // 1 byte coarse label, 1 byte fine label, 3072 bytes image (32x32x3, channel-major)
     constexpr std::size_t kImageBytes = 32u * 32u * 3u;
@@ -63,6 +64,7 @@ void NNDatasetManager::readCifar100BinaryFile(const std::string& filePath, NNMat
     // The stored input format is channel-major: 1024 R, 1024 G, 1024 B.
     data.reserve(recordCount * 3);
     labels.reserve(recordCount);
+    previewBytes.reserve(recordCount);
 
     std::vector<unsigned char> buffer(kImageBytes);
     for (std::size_t i = 0; i < recordCount; ++i) {
@@ -75,6 +77,8 @@ void NNDatasetManager::readCifar100BinaryFile(const std::string& filePath, NNMat
         if (!file) {
             throw std::runtime_error("Unexpected EOF while reading: " + filePath);
         }
+
+        previewBytes.emplace_back(buffer.begin(), buffer.end());
 
         (void) coarse; // coarse label currently unused
 
@@ -134,17 +138,20 @@ NNDataset NNDatasetManager::loadMnist() {
 
 NNDataset NNDatasetManager::loadCifar100() {
     NNMatrixPtrV inputs, labels;
+    std::vector<std::vector<unsigned char>> trainPreviewBytes;
     LOG << "Read CIFAR-100 train data from " << CIFAR100_TRAIN_FILE;
-    readCifar100BinaryFile(CIFAR100_TRAIN_FILE, inputs, labels);
+    readCifar100BinaryFile(CIFAR100_TRAIN_FILE, inputs, labels, trainPreviewBytes);
     LOG << "CIFAR-100 train data " << inputs.size() << ", total samples " << labels.size();
 
     NNMatrixPtrV testInputs, testLabels;
+    std::vector<std::vector<unsigned char>> testPreviewBytes;
     LOG << "Read CIFAR-100 test data from " << CIFAR100_TEST_FILE;
-    readCifar100BinaryFile(CIFAR100_TEST_FILE, testInputs, testLabels);
+    readCifar100BinaryFile(CIFAR100_TEST_FILE, testInputs, testLabels, testPreviewBytes);
     LOG << "CIFAR-100 test data: " << testInputs.size() << ", total samples " << testLabels.size();
 
-    return {"cifar-100 dataset", std::move(inputs), std::move(labels), std::move(testInputs),
-            std::move(testLabels)};
+    return {"cifar-100 dataset",        std::move(inputs),     std::move(labels),
+            std::move(testInputs),      std::move(testLabels), std::move(trainPreviewBytes),
+            std::move(testPreviewBytes)};
 }
 
 NNDataset NNDatasetManager::prepareCifar100Dataset(int maxTrainSamples, int maxTestSamples) {
@@ -154,12 +161,14 @@ NNDataset NNDatasetManager::prepareCifar100Dataset(int maxTrainSamples, int maxT
         dataSet.trainLabel_.resize(static_cast<size_t>(maxTrainSamples));
         dataSet.trainInput_.resize(static_cast<size_t>(maxTrainSamples) *
                                    static_cast<size_t>(CIFAR100_CNN_IN_CHANNELS));
+        dataSet.trainPreviewBytes_.resize(static_cast<size_t>(maxTrainSamples));
     }
 
     if (maxTestSamples > 0 && static_cast<int>(dataSet.testLabel_.size()) > maxTestSamples) {
         dataSet.testLabel_.resize(static_cast<size_t>(maxTestSamples));
         dataSet.testInput_.resize(static_cast<size_t>(maxTestSamples) *
                                   static_cast<size_t>(CIFAR100_CNN_IN_CHANNELS));
+        dataSet.testPreviewBytes_.resize(static_cast<size_t>(maxTestSamples));
     }
 
     return dataSet;

@@ -45,8 +45,8 @@ class CNN : public NN { // Simple Convolutional Neural Network
 
     using TrainCallback =
         std::function<void(int epoch, int totalEpochs, float loss, float accuracy)>;
-    using BatchCallback = std::function<void(int epoch, int batch, const NNMatrixPtrV& input,
-                                             const NNMatrix& output)>;
+    using BatchCallback = std::function<void(int epoch, int batch, int sampleIndex,
+                                             const NNMatrixPtrV& input, const NNMatrix& output)>;
     using BatchStatsCallback =
         std::function<void(int epoch, int totalEpochs, int batch, int totalBatches, float batchLoss,
                            float epochLoss, float batchAccuracy)>;

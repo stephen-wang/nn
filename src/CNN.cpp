@@ -785,7 +785,8 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
         auto& trainData = dataSet.trainInput_;
         auto& trainLabel = dataSet.trainLabel_;
 
-        const auto shuffleInfo = NNUtils::shuffleSamples(trainData, trainLabel);
+        const auto shuffleInfo =
+            NNUtils::shuffleSamples(trainData, trainLabel, dataSet.trainPreviewBytes_);
         const int inChannelSize = shuffleInfo.inChannelSize;
         const int sampleCount = shuffleInfo.sampleCount;
 
@@ -933,11 +934,17 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
                 if (chosen >= 0) {
                     NNMatrixPtrV sampleIn;
                     sampleIn.reserve(inChannelSize);
-                    const int base = chosen * inChannelSize;
+                    const int originalSampleIndex = startSample + chosen;
+                    const int base = originalSampleIndex * inChannelSize;
                     for (int c = 0; c < inChannelSize; ++c) {
-                        sampleIn.push_back(batchX[base + c]);
+                        if (base + c >= 0 && base + c < static_cast<int>(trainData.size()) &&
+                            trainData[base + c]) {
+                            sampleIn.push_back(trainData[base + c]);
+                        } else {
+                            sampleIn.push_back(batchX[chosen * inChannelSize + c]);
+                        }
                     }
-                    batchCallback(e, b, sampleIn, *preds[chosen]);
+                    batchCallback(e, b, originalSampleIndex, sampleIn, *preds[chosen]);
                 }
             }
 

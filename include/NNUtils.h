@@ -42,6 +42,9 @@ class NNUtils {
     // Returns inferred (channelsPerSample, sampleCount) used for batching.
     static ShuffleSampleInfo shuffleSamples(std::vector<NNMatrixPtr>& input,
                                             std::vector<NNMatrixPtr>& label);
+    static ShuffleSampleInfo shuffleSamples(std::vector<NNMatrixPtr>& input,
+                                            std::vector<NNMatrixPtr>& label,
+                                            std::vector<std::vector<unsigned char>>& previewBytes);
     static std::vector<NNMatrixPtr> getBatch(std::vector<NNMatrixPtr>& input, int batchNo,
                                              int batchSize);
 

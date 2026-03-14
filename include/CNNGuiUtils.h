@@ -1,5 +1,10 @@
 #pragma once
 
+#ifndef GL_SILENCE_DEPRECATION
+#define GL_SILENCE_DEPRECATION
+#endif
+
+#include <OpenGL/gl.h>
 #include <string>
 #include <vector>
 
@@ -17,6 +22,4 @@ class CNNGuiUtils {
 
     static GLFWwindow* initWindow();
     static void startTraining(TrainingStats& stats);
-    static void drawInputImage(ImDrawList* drawList, const ImVec2& origin, const ImVec2& size,
-                               const std::vector<float>& image);
 };
