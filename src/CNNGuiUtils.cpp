@@ -609,14 +609,6 @@ static void drawMaxPoolLayerGlyph(ImDrawList* drawList, const ImVec2& center, Im
         poolWindowRawTopLeft.y + (poolWindowRawSide - poolWindowSide) * 0.5f);
     drawSplitSquare(drawList, poolWindowTopLeft, poolWindowSide, windowColor, windowBorderColor,
                     poolWindowCells);
-    const ImU32 sumLabelColor = scaleColor(IM_COL32(30, 40, 120, 255), activityScale);
-    const char* sumText = "max";
-    ImFont* font = ImGui::GetFont();
-    const float sumFontSize = std::min(ImGui::GetFontSize() * 0.75f, poolWindowSide * 0.52f);
-    const ImVec2 sumTextSize = font->CalcTextSizeA(sumFontSize, FLT_MAX, 0.0f, sumText);
-    const ImVec2 sumTextPos(poolWindowTopLeft.x + (poolWindowSide - sumTextSize.x) * 0.5f,
-                            poolWindowTopLeft.y + (poolWindowSide - sumTextSize.y) * 0.5f);
-    drawList->AddText(font, sumFontSize, sumTextPos, sumLabelColor, sumText);
 
     const int maxCellIndex = (wrappedIndex + poolRow) % 4;
     const int maxCellRow = maxCellIndex / 2;
@@ -627,6 +619,15 @@ static void drawMaxPoolLayerGlyph(ImDrawList* drawList, const ImVec2& center, Im
     drawList->AddRectFilled(maxCellTopLeft,
                             ImVec2(maxCellTopLeft.x + maxCellSide, maxCellTopLeft.y + maxCellSide),
                             maxCellColor, 0.0f);
+
+    const ImU32 sumLabelColor = scaleColor(IM_COL32(30, 40, 120, 255), activityScale);
+    const char* sumText = "max";
+    ImFont* font = ImGui::GetFont();
+    const float sumFontSize = std::min(ImGui::GetFontSize() * 0.75f, poolWindowSide * 0.52f);
+    const ImVec2 sumTextSize = font->CalcTextSizeA(sumFontSize, FLT_MAX, 0.0f, sumText);
+    const ImVec2 sumTextPos(poolWindowTopLeft.x + (poolWindowSide - sumTextSize.x) * 0.5f,
+                            poolWindowTopLeft.y + (poolWindowSide - sumTextSize.y) * 0.5f);
+    drawList->AddText(font, sumFontSize, sumTextPos, sumLabelColor, sumText);
 
     if (showOutputSquares) {
         const ImVec2 outputCellTopLeft(
@@ -854,7 +855,7 @@ static void drawCnnTopology(ImDrawList* drawList, const ImVec2& origin, const Im
     ImFont* font = ImGui::GetFont();
     const float fontSize = ImGui::GetFontSize();
     const float maxGlyphHalfHeight = 145.0f;
-    const float titleYUpper = yUpper - maxGlyphHalfHeight - fontSize - 6.0f;
+    const float titleYUpper = yUpper - maxGlyphHalfHeight - fontSize - 2.0f;
     const float titleYLower = yLower - maxGlyphHalfHeight - fontSize - 6.0f;
 
     for (size_t i = 0; i < blocks.size(); ++i) {
