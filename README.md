@@ -48,6 +48,13 @@ make nn_gui_info
 ./nn_gui
 ```
 
+You can limit/continue training to an absolute epoch with checkpoint resume:
+
+```zsh
+./nn_gui --maxEpoch 20 --model dnn
+./nn_gui --maxEpoch 30 --model cnn
+```
+
 The GUI build uses the same entry point as the CLI build. You can force CLI mode with:
 
 ```zsh
@@ -59,6 +66,19 @@ The GUI build uses the same entry point as the CLI build. You can force CLI mode
 ```zsh
 ./main
 ```
+
+CLI also supports absolute max-epoch resume training:
+
+```zsh
+./nn --model dnn --maxEpoch 20
+./nn --model cnn --maxEpoch 30
+```
+
+Behavior of `--maxEpoch`:
+
+- Training checkpoint is automatically loaded before training starts.
+- Training continues from the last saved epoch up to `maxEpoch`.
+- Updated checkpoint is automatically saved after training ends.
 
 The program expects MNIST files in `mnist/`:
 

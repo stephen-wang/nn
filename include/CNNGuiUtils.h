@@ -10,7 +10,7 @@ struct ImVec2;
 class CNNGuiUtils {
   public:
     static int RunTrainingGui(const std::string& checkpointFilePath = "cnn_checkpoint.bin",
-                              bool loadBeforeTrain = false);
+                              bool loadBeforeTrain = false, int maxEpoch = -1);
 
   private:
     struct TrainingStats;

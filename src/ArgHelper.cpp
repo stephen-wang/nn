@@ -18,19 +18,20 @@ int ArgHelper::maybeRunGui(ModelType modelType) const {
 
     const bool requestGui = guiRequested(defaultGui);
     if (requestGui) {
+        const int maxEpoch = intValue("--maxEpoch", -1);
         if (modelType == ModelType::CNN) {
             const char* checkpointPathArg = value("--cnn-checkpoint");
             const std::string checkpointPath = checkpointPathArg
                                                    ? std::string(checkpointPathArg)
                                                    : std::string("cnn_checkpoint.bin");
-            const bool loadBeforeTrain = has("--cnn-load");
-            return CNNGuiUtils::RunTrainingGui(checkpointPath, loadBeforeTrain);
+            const bool loadBeforeTrain = has("--cnn-load") || maxEpoch > 0;
+            return CNNGuiUtils::RunTrainingGui(checkpointPath, loadBeforeTrain, maxEpoch);
         }
         const char* checkpointPathArg = value("--dnn-checkpoint");
         const std::string checkpointPath =
             checkpointPathArg ? std::string(checkpointPathArg) : std::string("dnn_checkpoint.bin");
-        const bool loadBeforeTrain = has("--dnn-load");
-        return DNNGuiUtils::RunTrainingGui(checkpointPath, loadBeforeTrain);
+        const bool loadBeforeTrain = has("--dnn-load") || maxEpoch > 0;
+        return DNNGuiUtils::RunTrainingGui(checkpointPath, loadBeforeTrain, maxEpoch);
     }
 
     return -1;

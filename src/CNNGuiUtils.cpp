@@ -69,6 +69,7 @@ inline float toDisplayUnit(float value) {
 constexpr int kImageSide = 32;
 constexpr int kInputSize = kImageSide * kImageSide;
 constexpr int kInChannels = CIFAR100_CNN_IN_CHANNELS;
+constexpr float kOperationFrameHeight = 285.0f;
 
 constexpr int kEpochs = CIFAR100_CNN_EPOCHS;
 constexpr int kBatchSize = CIFAR100_CNN_BATCH_SIZE;
@@ -528,7 +529,7 @@ static void drawMaxPoolLayerGlyph(ImDrawList* drawList, const ImVec2& center, Im
     const ImU32 mapColor = scaleColor(IM_COL32(255, 250, 235, 255), activityScale);
 
     constexpr float frameWidth = 200.0f;
-    constexpr float frameHeight = 285.0f;
+    constexpr float frameHeight = kOperationFrameHeight;
     constexpr float mapSide = 72.0f;
     constexpr int inChannels = 32;
     constexpr int outChannels = 32;
@@ -662,7 +663,7 @@ static void drawFCLayerGlyph(ImDrawList* drawList, const ImVec2& center, ImU32 c
     constexpr float rightCircleRadius = 3.0f;
 
     constexpr float frameWidth = 170.0f;
-    constexpr float frameHeight = 240.0f;
+    constexpr float frameHeight = kOperationFrameHeight;
     const ImVec2 frameTopLeft(center.x - frameWidth * 0.5f, center.y - frameHeight * 0.5f + 6.0f);
     const ImVec2 frameBottomRight(frameTopLeft.x + frameWidth, frameTopLeft.y + frameHeight);
     drawList->AddRectFilled(frameTopLeft, frameBottomRight, IM_COL32(26, 30, 36, 180), 6.0f);
@@ -718,7 +719,7 @@ static void drawFCLayerGlyph(ImDrawList* drawList, const ImVec2& center, ImU32 c
 
 static void drawOutputLayerGlyph(ImDrawList* drawList, const ImVec2& center, ImU32 color) {
     constexpr float frameWidth = 85.0f;
-    constexpr float frameHeight = 240.0f;
+    constexpr float frameHeight = kOperationFrameHeight;
     constexpr float dotRadius = 3.1f;
     constexpr int dotCount = 10;
 
@@ -784,12 +785,15 @@ static void drawCnnTopology(ImDrawList* drawList, const ImVec2& origin, const Im
     const ImU32 linkColorDim = IM_COL32(60, 60, 70, 160);
     const ImU32 linkColorActive = IM_COL32(140, 200, 255, 220);
 
-    constexpr std::array<int, 8> kHighlightSequence = {0, 1, 2, 3, 4, 6, 7, 8};
+    constexpr std::array<int, 9> kHighlightSequence = {0, 1, 2, 3, 4, 5, 6, 7, 8};
     constexpr double kHighlightDurationSec = 1.0;
-    const double nowSec = ImGui::GetTime();
-    const int seqIndex = static_cast<int>(std::floor(nowSec / kHighlightDurationSec)) %
-                         static_cast<int>(kHighlightSequence.size());
-    const int activeBlockIndex = kHighlightSequence[static_cast<size_t>(seqIndex)];
+    int activeBlockIndex = -1;
+    if (conv1AnimTimeSec >= 0.0) {
+        const int seqIndex =
+            static_cast<int>(std::floor(conv1AnimTimeSec / kHighlightDurationSec)) %
+            static_cast<int>(kHighlightSequence.size());
+        activeBlockIndex = kHighlightSequence[static_cast<size_t>(seqIndex)];
+    }
 
     auto blockIsActive = [&](int blockIndex) { return blockIndex == activeBlockIndex; };
 
@@ -856,19 +860,20 @@ static void drawCnnTopology(ImDrawList* drawList, const ImVec2& origin, const Im
     for (size_t i = 0; i < blocks.size(); ++i) {
         const bool highlight = blockIsActive(static_cast<int>(i));
         const ImU32 color = highlight ? blocks[i].color : scaleColor(blocks[i].color, 0.35f);
+        const double glyphAnimTimeSec = conv1AnimTimeSec >= 0.0 ? conv1AnimTimeSec : 0.0;
         if (i == 0) {
             drawInputLayerGlyph(drawList, centers[i], color);
         } else if (i == 1) {
-            drawConv1LayerGlyph(drawList, centers[i], color, conv1AnimTimeSec);
+            drawConv1LayerGlyph(drawList, centers[i], color, glyphAnimTimeSec);
         } else if (i == 2) {
-            drawConv2LayerGlyph(drawList, centers[i], color, conv1AnimTimeSec);
+            drawConv2LayerGlyph(drawList, centers[i], color, glyphAnimTimeSec);
         } else if (i == 3) {
-            drawMaxPoolLayerGlyph(drawList, centers[i], color, conv1AnimTimeSec, false, false,
+            drawMaxPoolLayerGlyph(drawList, centers[i], color, glyphAnimTimeSec, false, false,
                                   28.0f, false, false);
         } else if (i == 4) {
-            drawConv3LayerGlyph(drawList, centers[i], color, conv1AnimTimeSec);
+            drawConv3LayerGlyph(drawList, centers[i], color, glyphAnimTimeSec);
         } else if (i == 5) {
-            drawMaxPoolLayerGlyph(drawList, centers[i], color, conv1AnimTimeSec, true, false, 34.0f,
+            drawMaxPoolLayerGlyph(drawList, centers[i], color, glyphAnimTimeSec, true, false, 34.0f,
                                   false, false);
         } else if (i == 6) {
             drawFCLayerGlyph(drawList, centers[i], color, 64, 32, IM_COL32(255, 175, 120, 245),
@@ -920,6 +925,7 @@ struct CNNGuiUtils::TrainingStats {
     std::atomic<bool> stop{false};
     std::string checkpointFilePath;
     bool loadCheckpointBeforeTrain = false;
+    int maxEpoch = kEpochs;
 };
 
 GLFWwindow* CNNGuiUtils::initWindow() {
@@ -1070,8 +1076,9 @@ void CNNGuiUtils::startTraining(TrainingStats& stats) {
 
     CNN::StopCallback stopCallback = [&]() { return stats.stop.load(); };
 
-    cnn.train(dataset, kEpochs, kBatchSize, kLearningRate, kMomentum, CIFAR100_CNN_WEIGHT_DECAY,
-              callback, layerCallback, batchCallback, stopCallback, batchStatsCallback);
+    cnn.train(dataset, stats.maxEpoch, kBatchSize, kLearningRate, kMomentum,
+              CIFAR100_CNN_WEIGHT_DECAY, callback, layerCallback, batchCallback, stopCallback,
+              batchStatsCallback);
 
     stats.activeLayer.store(-1);
     stats.activePhase.store(static_cast<int>(CNN::LayerPhase::Idle));
@@ -1126,7 +1133,8 @@ void CNNGuiUtils::drawInputImage(ImDrawList* drawList, const ImVec2& origin, con
     drawList->PopClipRect();
 }
 
-int CNNGuiUtils::RunTrainingGui(const std::string& checkpointFilePath, bool loadBeforeTrain) {
+int CNNGuiUtils::RunTrainingGui(const std::string& checkpointFilePath, bool loadBeforeTrain,
+                                int maxEpoch) {
     GLFWwindow* window = initWindow();
     if (!window) {
         std::cerr << "Failed to initialize GLFW window" << std::endl;
@@ -1144,7 +1152,8 @@ int CNNGuiUtils::RunTrainingGui(const std::string& checkpointFilePath, bool load
 
     TrainingStats stats;
     stats.checkpointFilePath = checkpointFilePath;
-    stats.loadCheckpointBeforeTrain = loadBeforeTrain;
+    stats.loadCheckpointBeforeTrain = loadBeforeTrain || maxEpoch > 0;
+    stats.maxEpoch = maxEpoch > 0 ? maxEpoch : kEpochs;
     std::thread trainingThread(startTraining, std::ref(stats));
 
     while (!glfwWindowShouldClose(window)) {
@@ -1195,9 +1204,9 @@ int CNNGuiUtils::RunTrainingGui(const std::string& checkpointFilePath, bool load
         const float epochAcc = stats.epochAccuracy.load();
 
         if (epoch > 0) {
-            ImGui::Text("Epoch: %d/%d", epoch, kEpochs);
+            ImGui::Text("Epoch: %d/%d", epoch, stats.maxEpoch);
         } else {
-            ImGui::Text("Epoch: .../%d", kEpochs);
+            ImGui::Text("Epoch: .../%d", stats.maxEpoch);
         }
 
         if (batch > 0 && totalBatches > 0) {
@@ -1297,7 +1306,12 @@ int CNNGuiUtils::RunTrainingGui(const std::string& checkpointFilePath, bool load
                           IM_COL32(70, 80, 90, 255));
         int activeLayer = stats.activeLayer.load();
         int activePhase = stats.activePhase.load();
-        const double conv1AnimTimeSec = ImGui::GetTime();
+        const bool done = stats.done.load();
+        if (done) {
+            activeLayer = -1;
+            activePhase = static_cast<int>(CNN::LayerPhase::Idle);
+        }
+        const double conv1AnimTimeSec = done ? -1.0 : ImGui::GetTime();
         drawCnnTopology(drawList, canvasPos, canvasSize, activeLayer, activePhase,
                         conv1AnimTimeSec);
         ImGui::EndChild();

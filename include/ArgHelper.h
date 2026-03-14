@@ -111,6 +111,7 @@ class ArgHelper {
 
         os << "\nTraining overrides (optional):\n"
            << "  --epochs N\n"
+           << "  --maxEpoch N\n"
            << "  --batch-size N\n"
            << "  --learning-rate F\n"
            << "  --momentum F\n"

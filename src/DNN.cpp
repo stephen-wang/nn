@@ -3,6 +3,7 @@
 #include "NNFunctions.h"
 #include "NNUtils.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -41,6 +42,7 @@ DNN::DNN(const std::vector<int>& config) {
 void DNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningRate, float momentum,
                 TrainCallback callback, LayerCallback layerCallback, BatchCallback batchCallback,
                 StopCallback stopCallback, BatchStatsCallback batchStatsCallback) {
+    completedEpoch_ = 0;
     if (!checkpointFilePath_.empty() && loadCheckpointBeforeTrain_) {
         if (load(checkpointFilePath_)) {
             LOG << "Loaded DNN checkpoint from " << checkpointFilePath_;
@@ -50,6 +52,7 @@ void DNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
         }
     }
 
+    completedEpoch_ = 0;
     int e = 1;
     bool completedTraining = true;
     while (e <= epochNum) {
@@ -98,7 +101,7 @@ void DNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
                 const float epochAvgLoss =
                     (b + 1) > 0 ? (epochLoss / static_cast<float>(b + 1)) : 0.0f;
                 // Publish 1-based epoch/batch numbers for UI display.
-                batchStatsCallback(e + 1, epochNum, b + 1, numBatches, batchLoss, epochAvgLoss,
+                batchStatsCallback(e, epochNum, b + 1, numBatches, batchLoss, epochAvgLoss,
                                    batchAcc);
             }
 
@@ -116,13 +119,14 @@ void DNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
         float acc = accuracy(e, dataSet.testInput_, dataSet.testLabel_);
         LOG << "Epic " << e << "/" << epochNum << ", loss " << avgLoss << ", acc "
             << std::setprecision(3) << acc * 100;
+        completedEpoch_ = e;
         if (callback) {
-            callback(e + 1, epochNum, avgLoss, acc);
+            callback(e, epochNum, avgLoss, acc);
         }
         e++;
     }
 
-    if (completedTraining && !checkpointFilePath_.empty()) {
+    if (!checkpointFilePath_.empty()) {
         if (save(checkpointFilePath_)) {
             LOG << "Saved DNN checkpoint to " << checkpointFilePath_;
         } else {
@@ -139,7 +143,7 @@ bool DNN::save(const std::string& filePath) const {
     }
 
     constexpr char kMagic[8] = {'N', 'N', 'D', 'N', 'N', '1', '\0', '\0'};
-    constexpr std::uint32_t kVersion = 1;
+    constexpr std::uint32_t kVersion = 2;
 
     os.write(kMagic, sizeof(kMagic));
     if (!writeScalar(os, kVersion)) {
@@ -148,6 +152,11 @@ bool DNN::save(const std::string& filePath) const {
 
     const std::uint32_t layerCount = static_cast<std::uint32_t>(layers.size());
     if (!writeScalar(os, layerCount)) {
+        return false;
+    }
+
+    const std::int32_t completedEpoch = static_cast<std::int32_t>(completedEpoch_);
+    if (!writeScalar(os, completedEpoch)) {
         return false;
     }
 
@@ -181,7 +190,7 @@ bool DNN::load(const std::string& filePath) {
     }
 
     std::uint32_t version = 0;
-    if (!readScalar(is, version) || version != 1) {
+    if (!readScalar(is, version) || (version != 1 && version != 2)) {
         LOG << "DNN::load unsupported version " << version;
         return false;
     }
@@ -189,6 +198,13 @@ bool DNN::load(const std::string& filePath) {
     std::uint32_t layerCount = 0;
     if (!readScalar(is, layerCount)) {
         return false;
+    }
+
+    std::int32_t completedEpoch = 0;
+    if (version >= 2) {
+        if (!readScalar(is, completedEpoch)) {
+            return false;
+        }
     }
     if (layerCount != layers.size()) {
         LOG << "DNN::load layer count mismatch: file=" << layerCount << ", model=" << layers.size();
@@ -212,7 +228,11 @@ bool DNN::load(const std::string& filePath) {
         }
     }
 
-    return is.good();
+    if (!is.good()) {
+        return false;
+    }
+    completedEpoch_ = std::max(0, static_cast<int>(completedEpoch));
+    return true;
 }
 
 NNMatrix DNN::forward(int epic, int batchNo, const std::vector<NNMatrixPtr>& X,

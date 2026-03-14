@@ -741,6 +741,7 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
                 float weightDecay, TrainCallback callback, LayerCallback layerCallback,
                 BatchCallback batchCallback, StopCallback stopCallback,
                 BatchStatsCallback batchStatsCallback) {
+    completedEpoch_ = 0;
     if (!checkpointFilePath_.empty() && loadCheckpointBeforeTrain_) {
         if (load(checkpointFilePath_)) {
             LOG << "Loaded CNN checkpoint from " << checkpointFilePath_;
@@ -763,6 +764,7 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
     constexpr int kLrDecayEpochs = 25;      // Decay max LR every N epochs.
     constexpr float kLrDecayFactor = 0.5f;  // Decay factor for max LR.
 
+    completedEpoch_ = 0;
     int e = 1;
     bool completedTraining = true;
     int totalBatches = 0;
@@ -963,7 +965,7 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
                     valid > 0 ? (static_cast<float>(correct) / static_cast<float>(valid)) : 0.0f;
                 const float epochAvgLoss =
                     (b + 1) > 0 ? (epochLoss / static_cast<float>(b + 1)) : 0.0f;
-                batchStatsCallback(e + 1, epochNum, b + 1, numBatches, batchLoss, epochAvgLoss,
+                batchStatsCallback(e, epochNum, b + 1, numBatches, batchLoss, epochAvgLoss,
                                    batchAcc);
             }
 
@@ -993,12 +995,13 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
         }
 
         if (callback) {
-            callback(e + 1, epochNum, avgLoss, acc);
+            callback(e, epochNum, avgLoss, acc);
         }
+        completedEpoch_ = e;
         e++;
     }
 
-    if (completedTraining && !checkpointFilePath_.empty()) {
+    if (!checkpointFilePath_.empty()) {
         if (save(checkpointFilePath_)) {
             LOG << "Saved CNN checkpoint to " << checkpointFilePath_;
         } else {
@@ -1078,7 +1081,7 @@ bool CNN::save(const std::string& filePath) const {
     }
 
     constexpr char kMagic[8] = {'N', 'N', 'C', 'N', 'N', '1', '\0', '\0'};
-    constexpr std::uint32_t kVersion = 1;
+    constexpr std::uint32_t kVersion = 2;
 
     os.write(kMagic, sizeof(kMagic));
     if (!writeScalar(os, kVersion)) {
@@ -1087,6 +1090,11 @@ bool CNN::save(const std::string& filePath) const {
 
     const std::uint32_t layerCount = static_cast<std::uint32_t>(layers.size());
     if (!writeScalar(os, layerCount)) {
+        return false;
+    }
+
+    const std::int32_t completedEpoch = static_cast<std::int32_t>(completedEpoch_);
+    if (!writeScalar(os, completedEpoch)) {
         return false;
     }
 
@@ -1154,7 +1162,7 @@ bool CNN::load(const std::string& filePath) {
     }
 
     std::uint32_t version = 0;
-    if (!readScalar(is, version) || version != 1) {
+    if (!readScalar(is, version) || (version != 1 && version != 2)) {
         LOG << "CNN::load unsupported version " << version;
         return false;
     }
@@ -1162,6 +1170,13 @@ bool CNN::load(const std::string& filePath) {
     std::uint32_t layerCount = 0;
     if (!readScalar(is, layerCount)) {
         return false;
+    }
+
+    std::int32_t completedEpoch = 0;
+    if (version >= 2) {
+        if (!readScalar(is, completedEpoch)) {
+            return false;
+        }
     }
 
     if (layerCount != layers.size()) {
@@ -1223,5 +1238,9 @@ bool CNN::load(const std::string& filePath) {
         }
     }
 
-    return is.good();
+    if (!is.good()) {
+        return false;
+    }
+    completedEpoch_ = std::max(0, static_cast<int>(completedEpoch));
+    return true;
 }

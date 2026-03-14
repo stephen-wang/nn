@@ -32,6 +32,7 @@ class CNN : public NN { // Simple Convolutional Neural Network
     NNMatrixPtrVV augmentPool_;
     std::string checkpointFilePath_;
     bool loadCheckpointBeforeTrain_ = false;
+    int completedEpoch_ = 0;
 
   public:
     CNN(const std::vector<CNNConfigPtr>& configs);

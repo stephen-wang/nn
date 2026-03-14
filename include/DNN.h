@@ -14,6 +14,7 @@ class DNN : public NN { // Simple Deep Neural Network
     const std::string TAG = "DNN";
     std::string checkpointFilePath_;
     bool loadCheckpointBeforeTrain_ = false;
+    int completedEpoch_ = 0;
 
   public:
     DNN(const std::vector<int>& config);

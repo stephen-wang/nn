@@ -53,6 +53,7 @@ struct DNNGuiUtils::TrainingStats {
     std::atomic<bool> stop{false};
     std::string checkpointFilePath;
     bool loadCheckpointBeforeTrain = false;
+    int maxEpoch = EPOCHS;
 };
 
 GLFWwindow* DNNGuiUtils::initWindow() {
@@ -144,7 +145,7 @@ void DNNGuiUtils::startTraining(TrainingStats& stats) {
 
     DNN::StopCallback stopCallback = [&]() { return stats.stop.load(); };
 
-    nn.train(dataset, EPOCHS, BATCH_SIZE, LEARNING_RATE, MOMENTUM, callback, layerCallback,
+    nn.train(dataset, stats.maxEpoch, BATCH_SIZE, LEARNING_RATE, MOMENTUM, callback, layerCallback,
              batchCallback, stopCallback, batchStatsCallback);
     stats.activeLayer.store(-1);
     stats.activePhase.store(static_cast<int>(DNN::LayerPhase::Idle));
@@ -382,7 +383,8 @@ static void drawDnnTopology(ImDrawList* drawList, const ImVec2& origin, const Im
     }
 }
 
-int DNNGuiUtils::RunTrainingGui(const std::string& checkpointFilePath, bool loadBeforeTrain) {
+int DNNGuiUtils::RunTrainingGui(const std::string& checkpointFilePath, bool loadBeforeTrain,
+                                int maxEpoch) {
     GLFWwindow* window = initWindow();
     if (!window) {
         std::cerr << "Failed to initialize GLFW window" << std::endl;
@@ -399,7 +401,8 @@ int DNNGuiUtils::RunTrainingGui(const std::string& checkpointFilePath, bool load
 
     TrainingStats stats;
     stats.checkpointFilePath = checkpointFilePath;
-    stats.loadCheckpointBeforeTrain = loadBeforeTrain;
+    stats.loadCheckpointBeforeTrain = loadBeforeTrain || maxEpoch > 0;
+    stats.maxEpoch = maxEpoch > 0 ? maxEpoch : EPOCHS;
     std::thread trainingThread(startTraining, std::ref(stats));
 
     while (!glfwWindowShouldClose(window)) {
@@ -452,9 +455,9 @@ int DNNGuiUtils::RunTrainingGui(const std::string& checkpointFilePath, bool load
         const float epochAcc = stats.epochAccuracy.load();
 
         if (epoch > 0) {
-            ImGui::Text("Epoch: %d/%d", epoch, EPOCHS);
+            ImGui::Text("Epoch: %d/%d", epoch, stats.maxEpoch);
         } else {
-            ImGui::Text("Epoch: .../%d", EPOCHS);
+            ImGui::Text("Epoch: .../%d", stats.maxEpoch);
         }
 
         if (batch > 0 && totalBatches > 0) {
@@ -548,6 +551,10 @@ int DNNGuiUtils::RunTrainingGui(const std::string& checkpointFilePath, bool load
                           IM_COL32(70, 80, 90, 255));
         int activeLayer = stats.activeLayer.load();
         int activePhase = stats.activePhase.load();
+        if (stats.done.load()) {
+            activeLayer = -1;
+            activePhase = static_cast<int>(DNN::LayerPhase::Idle);
+        }
         drawDnnTopology(drawList, canvasPos, canvasSize, activeLayer, activePhase);
         ImGui::EndChild();
 

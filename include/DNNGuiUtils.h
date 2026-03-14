@@ -10,7 +10,7 @@ struct ImVec2;
 class DNNGuiUtils {
   public:
     static int RunTrainingGui(const std::string& checkpointFilePath = "dnn_checkpoint.bin",
-                              bool loadBeforeTrain = false);
+                              bool loadBeforeTrain = false, int maxEpoch = -1);
 
   private:
     struct TrainingStats;
