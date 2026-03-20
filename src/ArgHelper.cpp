@@ -1,13 +1,12 @@
 #include "ArgHelper.h"
 
 #include <iostream>
-#include <string>
 
 #if defined(NN_ENABLE_GUI)
 #include "CNNGuiUtils.h"
 #include "DNNGuiUtils.h"
 #include "NNGuiUtils.h"
-#endif
+#include <string>
 
 namespace {
 std::string resolveCheckpointPath(const ArgHelper& args, const char* key, const char* fallback) {
@@ -15,6 +14,7 @@ std::string resolveCheckpointPath(const ArgHelper& args, const char* key, const 
     return value ? std::string(value) : std::string(fallback);
 }
 }
+#endif
 
 int ArgHelper::maybeRunGui() const {
 #if defined(NN_ENABLE_GUI)
