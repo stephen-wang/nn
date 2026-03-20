@@ -1,13 +1,22 @@
 #include "ArgHelper.h"
 
 #include <iostream>
+#include <string>
 
 #if defined(NN_ENABLE_GUI)
 #include "CNNGuiUtils.h"
 #include "DNNGuiUtils.h"
+#include "NNGuiUtils.h"
 #endif
 
-int ArgHelper::maybeRunGui(ModelType modelType) const {
+namespace {
+std::string resolveCheckpointPath(const ArgHelper& args, const char* key, const char* fallback) {
+    const char* value = args.value(key);
+    return value ? std::string(value) : std::string(fallback);
+}
+}
+
+int ArgHelper::maybeRunGui() const {
 #if defined(NN_ENABLE_GUI)
     const bool defaultGui =
 #if defined(NN_DEFAULT_GUI)
@@ -16,27 +25,35 @@ int ArgHelper::maybeRunGui(ModelType modelType) const {
         false;
 #endif
 
-    const bool requestGui = guiRequested(defaultGui);
-    if (requestGui) {
+    const GuiLaunchMode launchMode = guiLaunchMode(defaultGui);
+    switch (launchMode) {
+    case GuiLaunchMode::Infer:
+        return NNGuiUtils::RunGui();
+    case GuiLaunchMode::TrainDNN: {
         const int maxEpoch = intValue("--maxEpoch", -1);
-        if (modelType == ModelType::CNN) {
-            const char* checkpointPathArg = value("--cnn-checkpoint");
-            const std::string checkpointPath = checkpointPathArg
-                                                   ? std::string(checkpointPathArg)
-                                                   : std::string("cnn_checkpoint.bin");
-            const bool loadBeforeTrain = has("--cnn-load") || maxEpoch > 0;
-            return CNNGuiUtils::RunTrainingGui(checkpointPath, loadBeforeTrain, maxEpoch);
-        }
-        const char* checkpointPathArg = value("--dnn-checkpoint");
-        const std::string checkpointPath =
-            checkpointPathArg ? std::string(checkpointPathArg) : std::string("dnn_checkpoint.bin");
         const bool loadBeforeTrain = has("--dnn-load") || maxEpoch > 0;
-        return DNNGuiUtils::RunTrainingGui(checkpointPath, loadBeforeTrain, maxEpoch);
+        return DNNGuiUtils::RunTrainingGui(
+            resolveCheckpointPath(*this, "--dnn-checkpoint", "dnn_checkpoint.bin"),
+            loadBeforeTrain, maxEpoch);
+    }
+    case GuiLaunchMode::TrainCNN: {
+        const int maxEpoch = intValue("--maxEpoch", -1);
+        const bool loadBeforeTrain = has("--cnn-load") || maxEpoch > 0;
+        return CNNGuiUtils::RunTrainingGui(
+            resolveCheckpointPath(*this, "--cnn-checkpoint", "cnn_checkpoint.bin"),
+            loadBeforeTrain, maxEpoch);
+    }
+    case GuiLaunchMode::Invalid:
+        std::cerr << "Invalid GUI mode. Use exactly one of: --inferMode, --trainMode dnn,"
+                  << " or --trainMode cnn." << std::endl;
+        return 2;
+    case GuiLaunchMode::None:
+        break;
     }
 
     return -1;
 #else
-    if (has("--gui")) {
+    if (has("--gui") || has("--inferMode") || value("--trainMode")) {
         std::cerr << "GUI support is not compiled into this binary. Build with `make nn_gui`.";
         std::cerr << std::endl;
         return 2;

@@ -66,6 +66,7 @@ class CNN : public NN { // Simple Convolutional Neural Network
 
     bool save(const std::string& filePath) const;
     bool load(const std::string& filePath);
+    NNMatrix infer(const NNMatrixPtrV& sample);
     void configurePersistence(const std::string& checkpointFilePath, bool loadBeforeTrain) {
         checkpointFilePath_ = checkpointFilePath;
         loadCheckpointBeforeTrain_ = loadBeforeTrain;

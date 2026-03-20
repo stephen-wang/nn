@@ -44,15 +44,21 @@ make nn_gui_info
 
 ### Run
 
+Three GUI entry modes are available:
+
 ```zsh
-./nn_gui
+./nn_gui --trainMode cnn
+./nn_gui --trainMode dnn
+./nn_gui --inferMode
 ```
+
+`./nn_gui` and `./nn_gui --gui` still open the inference UI by default.
 
 You can limit/continue training to an absolute epoch with checkpoint resume:
 
 ```zsh
-./nn_gui --maxEpoch 20 --model dnn
-./nn_gui --maxEpoch 30 --model cnn
+./nn_gui --trainMode dnn --maxEpoch 20
+./nn_gui --trainMode cnn --maxEpoch 30
 ```
 
 The GUI build uses the same entry point as the CLI build. You can force CLI mode with:

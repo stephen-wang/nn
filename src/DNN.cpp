@@ -235,6 +235,10 @@ bool DNN::load(const std::string& filePath) {
     return true;
 }
 
+NNMatrix DNN::infer(NNMatrixPtr x) {
+    return predict(0, std::move(x));
+}
+
 NNMatrix DNN::forward(int epic, int batchNo, const std::vector<NNMatrixPtr>& X,
                       LayerCallback layerCallback) {
     for (auto& batchOutpus : layerOutputs) {

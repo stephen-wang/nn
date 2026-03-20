@@ -11,6 +11,14 @@ enum class ModelType {
     CNN,
 };
 
+enum class GuiLaunchMode {
+    None,
+    Infer,
+    TrainDNN,
+    TrainCNN,
+    Invalid,
+};
+
 class ArgHelper {
   public:
     ArgHelper(int argc, char** argv) : argc_(argc), argv_(argv) {}
@@ -79,11 +87,50 @@ class ArgHelper {
         return has("--gui") || (defaultGui && !cliRequested());
     }
 
+    GuiLaunchMode guiLaunchMode(bool defaultGui) const {
+        const bool inferMode = has("--inferMode");
+        const char* trainMode = value("--trainMode");
+
+        if (inferMode && trainMode) {
+            return GuiLaunchMode::Invalid;
+        }
+
+        if (inferMode) {
+            return GuiLaunchMode::Infer;
+        }
+
+        if (trainMode) {
+            const std::string mode = trainMode;
+            if (mode == "dnn") {
+                return GuiLaunchMode::TrainDNN;
+            }
+            if (mode == "cnn") {
+                return GuiLaunchMode::TrainCNN;
+            }
+            return GuiLaunchMode::Invalid;
+        }
+
+        if (guiRequested(defaultGui)) {
+            return GuiLaunchMode::Infer;
+        }
+
+        return GuiLaunchMode::None;
+    }
+
     ModelType modelType() const {
         if (has("--cnn"))
             return ModelType::CNN;
         if (has("--dnn"))
             return ModelType::DNN;
+
+        const char* trainMode = value("--trainMode");
+        if (trainMode) {
+            const std::string mode = trainMode;
+            if (mode == "cnn")
+                return ModelType::CNN;
+            if (mode == "dnn")
+                return ModelType::DNN;
+        }
 
         // Support both `--model` and `--mode` for convenience.
         const char* model = value("--model");
@@ -102,9 +149,13 @@ class ArgHelper {
     }
 
     void printUsage(std::ostream& os, const char* program = "./main") const {
-        os << "Usage: " << program << " [--gui] [--cli] [--model dnn|cnn] [--mode dnn|cnn]\n"
-           << "  --gui  Run training GUI (requires nn_gui build)\n"
-           << "  --cli  Force CLI training mode (useful for ./nn_gui --cli)\n"
+          os << "Usage: " << program
+              << " [--inferMode|--gui] [--trainMode dnn|cnn] [--cli] [--model dnn|cnn]"
+                  " [--mode dnn|cnn]\n"
+              << "  --inferMode           Run the inference browser UI (requires nn_gui build)\n"
+              << "  --trainMode dnn|cnn   Run the DNN or CNN training UI (requires nn_gui build)\n"
+              << "  --gui                 Alias for --inferMode\n"
+              << "  --cli                 Force CLI training mode (useful for ./nn_gui --cli)\n"
            << "  --model dnn|cnn  Select network type (default: dnn)\n"
            << "  --mode dnn|cnn   Alias for --model\n"
            << "  --dnn / --cnn    Short aliases for --model\n";
@@ -126,7 +177,7 @@ class ArgHelper {
 
     // Returns >= 0 when GUI handling is complete and main() should return that code.
     // Returns -1 when main() should continue in CLI mode.
-    int maybeRunGui(ModelType modelType) const;
+    int maybeRunGui() const;
 
   private:
     int argc_;

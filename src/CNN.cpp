@@ -1080,6 +1080,17 @@ float CNN::accuracy(int epoc, const NNMatrixPtrV& x_test, const NNMatrixPtrV& y_
     return batchAccuracy(preds, *y_to_use);
 }
 
+NNMatrix CNN::infer(const NNMatrixPtrV& sample) {
+    if (sample.empty()) {
+        return NNMatrix(0, 0);
+    }
+    auto preds = forward(0, 0, static_cast<int>(sample.size()), sample, false, nullptr);
+    if (preds.empty() || !preds[0]) {
+        return NNMatrix(0, 0);
+    }
+    return *preds[0];
+}
+
 bool CNN::save(const std::string& filePath) const {
     std::ofstream os(filePath, std::ios::binary | std::ios::trunc);
     if (!os.is_open()) {

@@ -35,6 +35,7 @@ class DNN : public NN { // Simple Deep Neural Network
                BatchStatsCallback batchStatsCallback = nullptr);
     bool save(const std::string& filePath) const;
     bool load(const std::string& filePath);
+    NNMatrix infer(NNMatrixPtr x);
     void configurePersistence(const std::string& checkpointFilePath, bool loadBeforeTrain) {
         checkpointFilePath_ = checkpointFilePath;
         loadCheckpointBeforeTrain_ = loadBeforeTrain;

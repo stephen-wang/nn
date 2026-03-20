@@ -57,7 +57,7 @@ int main(int argc, char** argv) {
     ArgHelper argHelper(argc, argv);
     const ModelType modelType = argHelper.modelType();
 
-    const int guiExitCode = argHelper.maybeRunGui(modelType);
+    const int guiExitCode = argHelper.maybeRunGui();
     if (guiExitCode >= 0) {
         return guiExitCode;
     }

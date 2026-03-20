@@ -13,6 +13,7 @@ class NNDatasetManager {
   public:
     static NNDataset loadMnist();
     static NNDataset loadCifar100();
+    static NNDataset loadCifar100File(const std::string& filePath);
     static NNDataset prepareCifar100Dataset(int maxTrainSamples, int maxTestSamples);
     static std::vector<CNNConfigPtr> buildCifar100CnnConfigs();
     static std::vector<std::string> loadCifar100CoarseLabelNames();

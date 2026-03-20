@@ -154,6 +154,19 @@ NNDataset NNDatasetManager::loadCifar100() {
             std::move(testPreviewBytes)};
 }
 
+NNDataset NNDatasetManager::loadCifar100File(const std::string& filePath) {
+    NNMatrixPtrV inputs, labels;
+    std::vector<std::vector<unsigned char>> previewBytes;
+    readCifar100BinaryFile(filePath, inputs, labels, previewBytes);
+    return {"cifar-100 file",
+            std::move(inputs),
+            std::move(labels),
+            {},
+            {},
+            std::move(previewBytes),
+            {}};
+}
+
 NNDataset NNDatasetManager::prepareCifar100Dataset(int maxTrainSamples, int maxTestSamples) {
     auto dataSet = loadCifar100();
 
