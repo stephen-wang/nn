@@ -1,3 +1,4 @@
+#include "BNLayerTest.h"
 #include "CNNSerializationTest.h"
 #include "DNNSerializationTest.h"
 #include "NNMatrixTest.h"

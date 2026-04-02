@@ -2,6 +2,7 @@
 
 #include "NNUtils.h"
 
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -28,6 +29,9 @@ NNMatrix::NNMatrix(const NNMatrix& other) : std::enable_shared_from_this<NNMatri
     auto elemCount = static_cast<size_t>(row_) * static_cast<size_t>(col_);
     mem_ = new float[elemCount];
     memcpy(mem_, other.mem_, elemCount * sizeof(float));
+    statisticsCacheValid_ = other.statisticsCacheValid_;
+    cachedMean_ = other.cachedMean_;
+    cachedStandardDeviation_ = other.cachedStandardDeviation_;
 }
 
 NNMatrix::~NNMatrix() {
@@ -57,6 +61,10 @@ NNMatrix& NNMatrix::operator=(const NNMatrix& other) {
         memcpy(mem_, other.mem_, elemCount * sizeof(float));
     }
 
+    statisticsCacheValid_ = other.statisticsCacheValid_;
+    cachedMean_ = other.cachedMean_;
+    cachedStandardDeviation_ = other.cachedStandardDeviation_;
+
     return *this;
 }
 
@@ -73,9 +81,15 @@ NNMatrix& NNMatrix::operator=(NNMatrix&& other) noexcept {
     mem_ = other.mem_;
     row_ = other.row_;
     col_ = other.col_;
+    statisticsCacheValid_ = other.statisticsCacheValid_;
+    cachedMean_ = other.cachedMean_;
+    cachedStandardDeviation_ = other.cachedStandardDeviation_;
     other.mem_ = nullptr;
     other.row_ = 0;
     other.col_ = 0;
+    other.statisticsCacheValid_ = false;
+    other.cachedMean_ = 0.0f;
+    other.cachedStandardDeviation_ = 0.0f;
 
     return *this;
 }
@@ -120,12 +134,71 @@ void NNMatrix::set(int i, int j, float elemValue) {
     assert(i >= 0 && j >= 0);
     assert(i < row_ && j < col_);
     mem_[i * col_ + j] = elemValue;
+    invalidateStatisticsCache();
 }
 
 float NNMatrix::get(int i, int j) const {
     assert(i >= 0 && j >= 0);
     assert(i < row_ && j < col_);
     return mem_[i * col_ + j];
+}
+
+float NNMatrix::mean() const {
+    updateStatisticsCache();
+    return cachedMean_;
+}
+
+float NNMatrix::std() const {
+    updateStatisticsCache();
+    return cachedStandardDeviation_;
+}
+
+NNMatrix NNMatrix::normalized(float eps) const {
+    NNMatrix ret(row_, col_);
+    if (mem_ == nullptr || ret.mem_ == nullptr || row_ <= 0 || col_ <= 0) {
+        return ret;
+    }
+
+    updateStatisticsCache();
+
+    const int total = row_ * col_;
+    const double mu = static_cast<double>(cachedMean_);
+    const double sigma = static_cast<double>(cachedStandardDeviation_);
+    const double denom = std::max(sigma, static_cast<double>(eps));
+    float* out = ret.mem_;
+
+    for (int idx = 0; idx < total; ++idx) {
+        out[idx] = static_cast<float>((static_cast<double>(mem_[idx]) - mu) / denom);
+    }
+
+    return ret;
+}
+
+NNMatrix NNMatrix::normalized(double mean, double invStd) const {
+    NNMatrix ret(row_, col_);
+    if (mem_ == nullptr || ret.mem_ == nullptr || row_ <= 0 || col_ <= 0) {
+        return ret;
+    }
+
+    const int total = row_ * col_;
+    float* out = ret.data();
+    for (int idx = 0; idx < total; ++idx) {
+        out[idx] = static_cast<float>((static_cast<double>(mem_[idx]) - mean) * invStd);
+    }
+
+    return ret;
+}
+
+double NNMatrix::squaredDiffSum(double mean) const {
+    if (mem_ == nullptr || row_ <= 0 || col_ <= 0) {
+        return 0.0;
+    }
+
+    updateStatisticsCache();
+    const double matrixMean = static_cast<double>(cachedMean_);
+    const double matrixStd = static_cast<double>(cachedStandardDeviation_);
+    const double meanDiff = matrixMean - mean;
+    return static_cast<double>(elementCount()) * (matrixStd * matrixStd + meanDiff * meanDiff);
 }
 
 NNMatrix NNMatrix::dotProduct(const NNMatrix& other) {
@@ -212,6 +285,7 @@ NNMatrix& NNMatrix::operator+=(const NNMatrix& other) {
         dst[idx] += src[idx];
     }
 #endif
+    invalidateStatisticsCache();
     return *this;
 }
 
@@ -245,6 +319,7 @@ NNMatrix& NNMatrix::operator-=(const NNMatrix& other) {
     for (int idx = 0; idx < total; idx++) {
         dst[idx] -= src[idx];
     }
+    invalidateStatisticsCache();
     return *this;
 }
 
@@ -253,6 +328,7 @@ NNMatrix& NNMatrix::operator*=(float ratio) {
     for (int idx = 0; idx < total; idx++) {
         mem_[idx] *= ratio;
     }
+    invalidateStatisticsCache();
     return *this;
 }
 
@@ -266,6 +342,7 @@ NNMatrix& NNMatrix::operator/=(float ratio) {
     for (int idx = 0; idx < total; idx++) {
         mem_[idx] /= ratio;
     }
+    invalidateStatisticsCache();
     return *this;
 }
 
@@ -300,6 +377,7 @@ void NNMatrix::toOneHot() {
     for (int idx = 0; idx < total; idx++) {
         mem_[idx] = (mem_[idx] > threshold) ? 1.0f : 0.0f;
     }
+    invalidateStatisticsCache();
 }
 
 void NNMatrix::applyFunctionInplace(const MatrixFunc& func) {
@@ -322,6 +400,41 @@ void NNMatrix::applyFunctionInplace(const MatrixFunc& func) {
         dataPtr[idx] = func(dataPtr[idx]);
     }
 #endif
+    invalidateStatisticsCache();
+}
+
+void NNMatrix::invalidateStatisticsCache() {
+    statisticsCacheValid_ = false;
+}
+
+void NNMatrix::updateStatisticsCache() const {
+    if (statisticsCacheValid_) {
+        return;
+    }
+    if (mem_ == nullptr || row_ <= 0 || col_ <= 0) {
+        cachedMean_ = 0.0f;
+        cachedStandardDeviation_ = 0.0f;
+        statisticsCacheValid_ = true;
+        return;
+    }
+
+    const int total = row_ * col_;
+    double sum = 0.0;
+    for (int idx = 0; idx < total; ++idx) {
+        sum += static_cast<double>(mem_[idx]);
+    }
+    const double mu = sum / static_cast<double>(total);
+
+    double squaredDiffSum = 0.0;
+    for (int idx = 0; idx < total; ++idx) {
+        const double diff = static_cast<double>(mem_[idx]) - mu;
+        squaredDiffSum += diff * diff;
+    }
+
+    cachedMean_ = static_cast<float>(mu);
+    cachedStandardDeviation_ =
+        static_cast<float>(std::sqrt(squaredDiffSum / static_cast<double>(total)));
+    statisticsCacheValid_ = true;
 }
 
 void NNMatrix::dump(bool showFullLine, int lineSize, bool dumpToFile) const {

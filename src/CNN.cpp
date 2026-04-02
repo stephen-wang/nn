@@ -1,6 +1,6 @@
 #include "CNN.h"
 
-#include "BatchNormLayer.h"
+#include "BNLayer.h"
 #include "ConvolutionLayer.h"
 #include "DefaultCNNConfig.h"
 #include "FCNNLayer.h"
@@ -318,7 +318,7 @@ std::shared_ptr<NNLayer> CNN::buildCNNLayer(const CNNConfig& config) {
         layerPtr = std::make_unique<FCNNLayer>(config.getInputSize(), config.getOutputSize());
         break;
     case CNNLayerType::BatchNorm:
-        layerPtr = std::make_unique<BatchNormLayer>(config.getInputSize());
+        layerPtr = std::make_unique<BNLayer>(config.getInputSize());
         break;
     default:
         LOG << "Unsupported layer type " << static_cast<int>(config.getType());
@@ -415,7 +415,7 @@ NNMatrixPtrV CNN::forward(int epoc, int batchNo, int inChannelSize, const NNMatr
             break;
         }
         case NNLayerType::BatchNorm: {
-            auto* bn = static_cast<BatchNormLayer*>(layer.get());
+            auto* bn = static_cast<BNLayer*>(layer.get());
             curBySample = bn->forwardBatch(curBySample, training);
             for (size_t s = 0; s < sampleCount; ++s) {
                 applyReluInPlace(curBySample[s]);
@@ -782,7 +782,7 @@ void CNN::backward(const NNMatrixPtrV& X, const NNMatrixPtrV& Y, float learningR
         }
 
         if (layer->getLayerType() == NNLayerType::BatchNorm) {
-            auto* bn = static_cast<BatchNormLayer*>(layer.get());
+            auto* bn = static_cast<BNLayer*>(layer.get());
             gateReluGradientInPlace(dCurBySample, layerOutputs_[static_cast<size_t>(li)]);
             dCurBySample = bn->backwardBatch(dCurBySample);
             bn->update(learningRate, momentum);
@@ -1227,7 +1227,7 @@ bool CNN::save(const std::string& filePath) const {
             break;
         }
         case NNLayerType::BatchNorm: {
-            auto* bn = static_cast<BatchNormLayer*>(layer.get());
+            auto* bn = static_cast<BNLayer*>(layer.get());
             if (!bn->saveState(os)) {
                 return false;
             }
@@ -1322,7 +1322,7 @@ bool CNN::load(const std::string& filePath) {
             break;
         }
         case NNLayerType::BatchNorm: {
-            auto* bn = static_cast<BatchNormLayer*>(layer.get());
+            auto* bn = static_cast<BNLayer*>(layer.get());
             if (!bn->loadState(is)) {
                 return false;
             }

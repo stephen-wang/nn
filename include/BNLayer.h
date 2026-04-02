@@ -13,9 +13,9 @@
 // - Batch: vector of samples
 // - Sample: vector of channels
 // - Channel: matrix (H x W)
-class BatchNormLayer : public NNLayer {
+class BNLayer : public NNLayer {
   public:
-    explicit BatchNormLayer(int channels, float eps = 1e-5f, float runningMomentum = 0.1f);
+    explicit BNLayer(int channels, float eps = 1e-5f, float runningMomentum = 0.1f);
 
     int channels() const { return channels_; }
 
@@ -52,8 +52,8 @@ class BatchNormLayer : public NNLayer {
     std::vector<float> runningVar_;
 
     // Cached batch stats (training forward).
-    std::vector<float> batchMean_;
-    std::vector<float> batchInvStd_;
+    std::vector<double> batchMean_;
+    std::vector<double> batchInvStd_;
 
     // Cached xhat per sample/channel for backward.
     std::vector<NNMatrixPtrV> xhatBySample_;

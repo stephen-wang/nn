@@ -21,6 +21,12 @@ class NNMatrix : public std::enable_shared_from_this<NNMatrix> {
     NNVector getCol(int col) const;
     void set(int i, int j, float elemValue);
     float get(int i, int j) const;
+    int elementCount() const { return row_ * col_; }
+    float mean() const;
+    float std() const;
+    NNMatrix normalized(float eps = 1e-6f) const;
+    NNMatrix normalized(double mean, double invStd) const;
+    double squaredDiffSum(double mean) const;
     NNMatrix operator-(const NNMatrix& other);
     NNMatrix& operator-=(const NNMatrix& other);
     NNMatrix& operator+=(const NNMatrix& other);
@@ -46,15 +52,24 @@ class NNMatrix : public std::enable_shared_from_this<NNMatrix> {
     void dump(bool showFullLine = false, int lineSize = -1, bool dumpToFile = false) const;
     void toOneHot();
 
-    float* data() { return mem_; }
+    float* data() {
+        invalidateStatisticsCache();
+        return mem_;
+    }
     const float* data() const { return mem_; }
 
   private:
+    void invalidateStatisticsCache();
+    void updateStatisticsCache() const;
+
     const std::string TAG = "NNMatrix";
     const int MAX_DUMP_LINE_SIZE = 28;
     float* mem_ = nullptr;
     int row_ = 0;
     int col_ = 0;
+    mutable bool statisticsCacheValid_ = false;
+    mutable float cachedMean_ = 0.0f;
+    mutable float cachedStandardDeviation_ = 0.0f;
 };
 
 using NNMatrixPtr = std::shared_ptr<NNMatrix>;
