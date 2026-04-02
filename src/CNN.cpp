@@ -25,6 +25,91 @@ std::mt19937& rng() {
     return gen;
 }
 
+float cosineAnnealedLearningRate(float maxLearningRate, int epochNum, int numBatches,
+                                 int totalBatchesSeen) {
+    const float minLearningRate = std::min(maxLearningRate, CIFAR100_CNN_MIN_LEARNING_RATE);
+    if (epochNum <= 0 || numBatches <= 0) {
+        return maxLearningRate;
+    }
+
+    const int warmupSteps = std::max(1, CIFAR100_CNN_WARMUP_EPOCHS * numBatches);
+    const int totalSteps = std::max(warmupSteps + 1, epochNum * numBatches);
+    const int step = std::max(0, totalBatchesSeen);
+
+    if (step < warmupSteps) {
+        const float t = static_cast<float>(step + 1) / static_cast<float>(warmupSteps);
+        return minLearningRate + (maxLearningRate - minLearningRate) * t;
+    }
+
+    constexpr float kPi = 3.14159265358979323846f;
+    const float progress = std::min(1.0f, static_cast<float>(step - warmupSteps) /
+                                              static_cast<float>(totalSteps - warmupSteps));
+    const float cosine = 0.5f * (1.0f + std::cos(kPi * progress));
+    return minLearningRate + (maxLearningRate - minLearningRate) * cosine;
+}
+
+void applyCutoutInPlace(NNMatrixPtrV& sample, int cutoutSize) {
+    if (!CIFAR100_CNN_USE_CUTOUT || sample.empty() || cutoutSize <= 0) {
+        return;
+    }
+    if (!sample[0] || sample[0]->getRowSize() <= 0 || sample[0]->getColSize() <= 0) {
+        return;
+    }
+
+    const int height = sample[0]->getRowSize();
+    const int width = sample[0]->getColSize();
+    std::uniform_int_distribution<int> rowDist(0, std::max(0, height - 1));
+    std::uniform_int_distribution<int> colDist(0, std::max(0, width - 1));
+    const int centerY = rowDist(rng());
+    const int centerX = colDist(rng());
+    const int half = cutoutSize / 2;
+    const int y0 = std::max(0, centerY - half);
+    const int y1 = std::min(height, centerY + half + (cutoutSize % 2));
+    const int x0 = std::max(0, centerX - half);
+    const int x1 = std::min(width, centerX + half + (cutoutSize % 2));
+
+    for (auto& channel : sample) {
+        if (!channel || channel->getRowSize() != height || channel->getColSize() != width) {
+            return;
+        }
+        float* data = channel->data();
+        if (!data) {
+            return;
+        }
+        for (int y = y0; y < y1; ++y) {
+            float* row = data + y * width;
+            std::fill(row + x0, row + x1, 0.0f);
+        }
+    }
+}
+
+void applyReluInPlace(NNMatrixPtrV& sample) {
+    for (auto& channel : sample) {
+        if (channel) {
+            channel->applyFunctionInplace(NNFunctions::ReLUFunc);
+        }
+    }
+}
+
+void gateReluGradientInPlace(std::vector<NNMatrixPtrV>& gradients,
+                             const std::vector<NNMatrixPtrV>& activations) {
+    const size_t sampleCount = std::min(gradients.size(), activations.size());
+    for (size_t s = 0; s < sampleCount; ++s) {
+        auto& gradSample = gradients[s];
+        const auto& actSample = activations[s];
+        const size_t channelCount = std::min(gradSample.size(), actSample.size());
+        for (size_t c = 0; c < channelCount; ++c) {
+            auto& grad = gradSample[c];
+            const auto& act = actSample[c];
+            if (!grad || !act || grad->getRowSize() != act->getRowSize() ||
+                grad->getColSize() != act->getColSize()) {
+                continue;
+            }
+            *grad = grad->elementProduct(act->applyFunction(NNFunctions::ReLUDrevative));
+        }
+    }
+}
+
 NNMatrixPtr augmentCifar32Channel(const NNMatrixPtr& in, int pad, int cropY, int cropX, bool hflip,
                                   NNMatrixPtr& reuse) {
     if (!in) {
@@ -129,6 +214,7 @@ NNMatrixPtrV maybeAugmentCifar32Sample(const NNMatrixPtrV& sample, int pad,
         }
         out.push_back(std::move(aug));
     }
+    applyCutoutInPlace(out, CIFAR100_CNN_CUTOUT_SIZE);
     return out;
 }
 
@@ -332,6 +418,7 @@ NNMatrixPtrV CNN::forward(int epoc, int batchNo, int inChannelSize, const NNMatr
             auto* bn = static_cast<BatchNormLayer*>(layer.get());
             curBySample = bn->forwardBatch(curBySample, training);
             for (size_t s = 0; s < sampleCount; ++s) {
+                applyReluInPlace(curBySample[s]);
                 layerOutputs_[li][s] = curBySample[s];
             }
             break;
@@ -527,11 +614,26 @@ void CNN::backward(const NNMatrixPtrV& X, const NNMatrixPtrV& Y, float learningR
             continue;
         }
 
-        // Output layer derivative (softmax + cross-entropy): dz = y_hat - y.
+        // Output layer derivative (softmax + cross-entropy), optionally with label smoothing.
         if (layerCallback) {
             layerCallback(epoc, batchNo, fcLayerPositions[outId], LayerPhase::Backward);
         }
-        dzs[outId] = *fcLayerOutputs_[outId][i] - *Y[i];
+        dzs[outId] = *fcLayerOutputs_[outId][i];
+        if (CIFAR100_CNN_LABEL_SMOOTHING > 0.0f && dzs[outId].getRowSize() == Y[i]->getRowSize() &&
+            Y[i]->getColSize() == 1) {
+            const int classCount = dzs[outId].getRowSize();
+            const float smooth = std::min(0.2f, std::max(0.0f, CIFAR100_CNN_LABEL_SMOOTHING));
+            const float offTarget = smooth / static_cast<float>(std::max(1, classCount));
+            const int targetIndex = Y[i]->getIndexOfColMax(0);
+            for (int row = 0; row < classCount; ++row) {
+                dzs[outId].set(row, 0, dzs[outId].get(row, 0) - offTarget);
+            }
+            if (targetIndex >= 0 && targetIndex < classCount) {
+                dzs[outId].set(targetIndex, 0, dzs[outId].get(targetIndex, 0) - (1.0f - smooth));
+            }
+        } else {
+            dzs[outId] -= *Y[i];
+        }
         dws[outId] += calculateDW(*fcLayerInputs_[outId][i], dzs[outId]);
         dbs[outId] += dzs[outId];
 
@@ -681,6 +783,7 @@ void CNN::backward(const NNMatrixPtrV& X, const NNMatrixPtrV& Y, float learningR
 
         if (layer->getLayerType() == NNLayerType::BatchNorm) {
             auto* bn = static_cast<BatchNormLayer*>(layer.get());
+            gateReluGradientInPlace(dCurBySample, layerOutputs_[static_cast<size_t>(li)]);
             dCurBySample = bn->backwardBatch(dCurBySample);
             bn->update(learningRate, momentum);
             continue;
@@ -754,16 +857,6 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
     constexpr int kLogEveryNBatches = 50;
     constexpr int kValidationSampleSize = 1000; // Use a subset for faster validation.
 
-    // A new learning rate strategy that combines Cyclical Learning Rate (CLR) with a decay
-    // schedule. The maximum learning rate of the cycle is decayed periodically to stabilize
-    // training in later stages. The cycle length is also increased to make the learning rate
-    // changes more gradual.
-    float clrMaxLr = learningRate;          // Use initial LR as the max boundary, then decay.
-    constexpr float kClrBaseLr = 1.0e-4f;   // The lower boundary.
-    constexpr int kClrStepSizeInEpochs = 8; // Half a cycle in epochs (16-epoch full cycle).
-    constexpr int kLrDecayEpochs = 25;      // Decay max LR every N epochs.
-    constexpr float kLrDecayFactor = 0.5f;  // Decay factor for max LR.
-
     completedEpoch_ = 0;
     int e = 1;
     bool completedTraining = true;
@@ -773,13 +866,6 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
             completedTraining = false;
             break;
         }
-
-        // Decay max learning rate every kLrDecayEpochs.
-        if (e > 1 && (e - 1) % kLrDecayEpochs == 0) {
-            clrMaxLr *= kLrDecayFactor;
-            LOG << "Decaying max learning rate to " << clrMaxLr << std::endl;
-        }
-
         LOG << "Epoc " << e << "/" << epochNum << ", trainData " << dataSet.trainInput_.size()
             << ", trainLabel " << dataSet.trainLabel_.size() << std::endl;
         auto& trainData = dataSet.trainInput_;
@@ -793,8 +879,6 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
         int numBatches = NNUtils::ceilDiv(sampleCount, batchSize);
         float epochLoss = 0.0f;
 
-        const int stepSizeInBatches = kClrStepSizeInEpochs * numBatches;
-
         std::vector<NNMatrixPtr> batchX;
         std::vector<NNMatrixPtr> batchY;
         batchX.reserve(static_cast<size_t>(batchSize) *
@@ -807,15 +891,8 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
                 break;
             }
 
-            // Calculate CLR for this batch.
-            const float cycle =
-                std::floor(1.0f + static_cast<float>(totalBatches) /
-                                      (2.0f * static_cast<float>(stepSizeInBatches)));
-            const float x =
-                std::abs(static_cast<float>(totalBatches) / static_cast<float>(stepSizeInBatches) -
-                         2.0f * cycle + 1.0f);
-            float curLearningRate =
-                kClrBaseLr + (clrMaxLr - kClrBaseLr) * std::max(0.0f, (1.0f - x));
+            const float curLearningRate =
+                cosineAnnealedLearningRate(learningRate, epochNum, numBatches, totalBatches);
 
             const int startSample = b * batchSize;
             const int endSample = std::min(startSample + batchSize, sampleCount);

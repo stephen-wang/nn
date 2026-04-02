@@ -8,9 +8,9 @@
 class CNNConfigBuilder {
   public:
     CNNConfigBuilder& addConvolution(int inputSize, int outputSize, int kernelSize, int stride,
-                                     int padding) {
-        configs_.push_back(std::make_shared<ConvolutionLayerConfig>(inputSize, outputSize,
-                                                                    kernelSize, stride, padding));
+                                     int padding, MatrixFunc actFunction = NNFunctions::ReLUFunc) {
+        configs_.push_back(std::make_shared<ConvolutionLayerConfig>(
+            inputSize, outputSize, kernelSize, stride, padding, actFunction));
         return *this;
     }
 

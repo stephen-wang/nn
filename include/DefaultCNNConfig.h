@@ -54,6 +54,11 @@ const float CIFAR100_CNN_WEIGHT_DECAY = 5e-4f;
 const bool CIFAR100_CNN_USE_BATCHNORM = true;
 const bool CIFAR100_CNN_USE_DATA_AUGMENTATION = true;
 const int CIFAR100_CNN_AUGMENT_PAD = 4;
+const bool CIFAR100_CNN_USE_CUTOUT = true;
+const int CIFAR100_CNN_CUTOUT_SIZE = 8;
+const float CIFAR100_CNN_LABEL_SMOOTHING = 0.1f;
+const int CIFAR100_CNN_WARMUP_EPOCHS = 5;
+const float CIFAR100_CNN_MIN_LEARNING_RATE = 5e-4f;
 
 // Practical defaults: CNN training is CPU-heavy; keep the default run small to iterate faster.
 // Increase these (or set to <=0) for full-dataset training.

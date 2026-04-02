@@ -4,6 +4,7 @@
 #include "DefaultCNNConfig.h"
 #include "NNUtils.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <fstream>
 #include <stdexcept>
@@ -11,9 +12,16 @@
 #include <vector>
 
 namespace {
-inline float normalizeCifarByte(unsigned char v) {
-    // Map [0,255] -> [-1,1]. Equivalent to: (v/255 - 0.5) / 0.5.
-    return static_cast<float>(v) / 127.5f - 1.0f;
+constexpr float kCifar100MeanR = 0.5071f;
+constexpr float kCifar100MeanG = 0.4867f;
+constexpr float kCifar100MeanB = 0.4408f;
+constexpr float kCifar100StdR = 0.2675f;
+constexpr float kCifar100StdG = 0.2565f;
+constexpr float kCifar100StdB = 0.2761f;
+
+inline float normalizeCifarByte(unsigned char v, float mean, float stddev) {
+    const float scaled = static_cast<float>(v) / 255.0f;
+    return (scaled - mean) / std::max(1.0e-6f, stddev);
 }
 } // namespace
 
@@ -89,13 +97,14 @@ void NNDatasetManager::readCifar100BinaryFile(
         for (int row = 0; row < kImageSide; ++row) {
             for (int col = 0; col < kImageSide; ++col) {
                 const int idx = row * kImageSide + col;
-                // Normalize to approximately zero-mean range: [0,1] -> [-1,1].
-                // This is a lightweight alternative to per-channel mean/std normalization.
-                const float rf = normalizeCifarByte(buffer[static_cast<std::size_t>(idx)]);
+                const float rf = normalizeCifarByte(buffer[static_cast<std::size_t>(idx)],
+                                                    kCifar100MeanR, kCifar100StdR);
                 const float gf =
-                    normalizeCifarByte(buffer[static_cast<std::size_t>(kChannelSize + idx)]);
+                    normalizeCifarByte(buffer[static_cast<std::size_t>(kChannelSize + idx)],
+                                       kCifar100MeanG, kCifar100StdG);
                 const float bf =
-                    normalizeCifarByte(buffer[static_cast<std::size_t>(2 * kChannelSize + idx)]);
+                    normalizeCifarByte(buffer[static_cast<std::size_t>(2 * kChannelSize + idx)],
+                                       kCifar100MeanB, kCifar100StdB);
                 r->set(row, col, rf);
                 g->set(row, col, gf);
                 b->set(row, col, bf);
@@ -193,16 +202,16 @@ std::vector<CNNConfigPtr> NNDatasetManager::buildCifar100CnnConfigs() {
     return builder
         .addConvolution(CIFAR100_CNN_IN_CHANNELS, CIFAR100_CNN_CONV1_OUT_CHANNELS,
                         CIFAR100_CNN_CONV_FILTER_SIZE, CIFAR100_CNN_CONV_STRIDE_SIZE,
-                        CIFAR100_CNN_CONV_PADDING_SIZE)
+                        CIFAR100_CNN_CONV_PADDING_SIZE, nullptr)
         .addBatchNorm(CIFAR100_CNN_CONV1_OUT_CHANNELS)
         .addConvolution(CIFAR100_CNN_CONV1_OUT_CHANNELS, CIFAR100_CNN_CONV2_OUT_CHANNELS,
                         CIFAR100_CNN_CONV_FILTER_SIZE, CIFAR100_CNN_CONV_STRIDE_SIZE,
-                        CIFAR100_CNN_CONV_PADDING_SIZE)
+                        CIFAR100_CNN_CONV_PADDING_SIZE, nullptr)
         .addBatchNorm(CIFAR100_CNN_CONV2_OUT_CHANNELS)
         .addMaxPooling(CIFAR100_CNN_POOLING_FILTER_SIZE, CIFAR100_CNN_POOLING_STRIDE_SIZE)
         .addConvolution(CIFAR100_CNN_CONV2_OUT_CHANNELS, CIFAR100_CNN_CONV3_OUT_CHANNELS,
                         CIFAR100_CNN_CONV_FILTER_SIZE, CIFAR100_CNN_CONV_STRIDE_SIZE,
-                        CIFAR100_CNN_CONV_PADDING_SIZE)
+                        CIFAR100_CNN_CONV_PADDING_SIZE, nullptr)
         .addBatchNorm(CIFAR100_CNN_CONV3_OUT_CHANNELS)
         .addMaxPooling(CIFAR100_CNN_POOLING_FILTER_SIZE, CIFAR100_CNN_POOLING_STRIDE_SIZE)
         .addFullyConnected(CIFAR100_CNN_FC1_IN_SIZE, CIFAR100_CNN_FC1_OUT_SIZE)
