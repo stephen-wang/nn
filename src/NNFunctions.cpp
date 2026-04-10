@@ -1,6 +1,6 @@
 #include "NNFunctions.h"
 
-#include "NNUtils.h"
+#include "NNLog.h"
 
 const std::string NNFunctions::TAG = "NNFunctions";
 MatrixFunc NNFunctions::SigmoidFunc = [](float x) {

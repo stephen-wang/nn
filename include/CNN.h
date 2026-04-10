@@ -74,12 +74,12 @@ class CNN : public NN { // Simple Convolutional Neural Network
 
   private:
     std::shared_ptr<NNLayer> buildCNNLayer(const CNNConfig& config);
-    NNMatrixPtrV forward(int epoc, int batchNo, int inChannelSize, const NNMatrixPtrV& X,
+    NNMatrixPtrV forward(int epoch, int batchNo, int inChannelSize, const NNMatrixPtrV& X,
                          bool training, LayerCallback layerCallback = nullptr);
     void backward(const NNMatrixPtrV& X, const NNMatrixPtrV& Y, float learningRate, float momentum,
-                  float weightDecay, int epoc, int batchNo, int inChannelSize,
+                  float weightDecay, int epoch, int batchNo, int inChannelSize,
                   LayerCallback layerCallback = nullptr);
     float loss(NNMatrixPtrV& Y);
-    float accuracy(int epoc, const NNMatrixPtrV& x_test, const NNMatrixPtrV& y_test,
+    float accuracy(int epoch, const NNMatrixPtrV& x_test, const NNMatrixPtrV& y_test,
                    int maxSamples = 0);
 };

@@ -1,5 +1,7 @@
 #include "FCNNLayer.h"
 
+#include "NNLog.h"
+
 #include <iomanip>
 #include <istream>
 #include <ostream>
@@ -180,13 +182,8 @@ bool FCNNLayer::loadState(std::istream& is) {
         return false;
     }
 
-    if (newWeight.getRowSize() != weight.getRowSize() ||
-        newWeight.getColSize() != weight.getColSize() ||
-        newVWeight.getRowSize() != vWeight.getRowSize() ||
-        newVWeight.getColSize() != vWeight.getColSize() ||
-        newBias.getRowSize() != bias.getRowSize() || newBias.getColSize() != bias.getColSize() ||
-        newVBias.getRowSize() != vBias.getRowSize() ||
-        newVBias.getColSize() != vBias.getColSize()) {
+    if (!newWeight.hasSameDimension(weight) || !newVWeight.hasSameDimension(vWeight) ||
+        !newBias.hasSameDimension(bias) || !newVBias.hasSameDimension(vBias)) {
         return false;
     }
 

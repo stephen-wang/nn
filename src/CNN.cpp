@@ -5,6 +5,8 @@
 #include "DefaultCNNConfig.h"
 #include "FCNNLayer.h"
 #include "MaxPoolingLayer.h"
+#include "NNLog.h"
+#include "NNStreamUtils.h"
 #include "NNUtils.h"
 #include "nnlog/nnlog.h"
 
@@ -17,274 +19,6 @@
 #include <iomanip>
 #include <memory>
 #include <numeric>
-#include <random>
-
-namespace {
-std::mt19937& rng() {
-    static thread_local std::mt19937 gen(std::random_device{}());
-    return gen;
-}
-
-float cosineAnnealedLearningRate(float maxLearningRate, int epochNum, int numBatches,
-                                 int totalBatchesSeen) {
-    const float minLearningRate = std::min(maxLearningRate, CIFAR100_CNN_MIN_LEARNING_RATE);
-    if (epochNum <= 0 || numBatches <= 0) {
-        return maxLearningRate;
-    }
-
-    const int warmupSteps = std::max(1, CIFAR100_CNN_WARMUP_EPOCHS * numBatches);
-    const int totalSteps = std::max(warmupSteps + 1, epochNum * numBatches);
-    const int step = std::max(0, totalBatchesSeen);
-
-    if (step < warmupSteps) {
-        const float t = static_cast<float>(step + 1) / static_cast<float>(warmupSteps);
-        return minLearningRate + (maxLearningRate - minLearningRate) * t;
-    }
-
-    constexpr float kPi = 3.14159265358979323846f;
-    const float progress = std::min(1.0f, static_cast<float>(step - warmupSteps) /
-                                              static_cast<float>(totalSteps - warmupSteps));
-    const float cosine = 0.5f * (1.0f + std::cos(kPi * progress));
-    return minLearningRate + (maxLearningRate - minLearningRate) * cosine;
-}
-
-void applyCutoutInPlace(NNMatrixPtrV& sample, int cutoutSize) {
-    if (!CIFAR100_CNN_USE_CUTOUT || sample.empty() || cutoutSize <= 0) {
-        return;
-    }
-    if (!sample[0] || sample[0]->getRowSize() <= 0 || sample[0]->getColSize() <= 0) {
-        return;
-    }
-
-    const int height = sample[0]->getRowSize();
-    const int width = sample[0]->getColSize();
-    std::uniform_int_distribution<int> rowDist(0, std::max(0, height - 1));
-    std::uniform_int_distribution<int> colDist(0, std::max(0, width - 1));
-    const int centerY = rowDist(rng());
-    const int centerX = colDist(rng());
-    const int half = cutoutSize / 2;
-    const int y0 = std::max(0, centerY - half);
-    const int y1 = std::min(height, centerY + half + (cutoutSize % 2));
-    const int x0 = std::max(0, centerX - half);
-    const int x1 = std::min(width, centerX + half + (cutoutSize % 2));
-
-    for (auto& channel : sample) {
-        if (!channel || channel->getRowSize() != height || channel->getColSize() != width) {
-            return;
-        }
-        float* data = channel->data();
-        if (!data) {
-            return;
-        }
-        for (int y = y0; y < y1; ++y) {
-            float* row = data + y * width;
-            std::fill(row + x0, row + x1, 0.0f);
-        }
-    }
-}
-
-void applyReluInPlace(NNMatrixPtrV& sample) {
-    for (auto& channel : sample) {
-        if (channel) {
-            channel->applyFunctionInplace(NNFunctions::ReLUFunc);
-        }
-    }
-}
-
-void gateReluGradientInPlace(std::vector<NNMatrixPtrV>& gradients,
-                             const std::vector<NNMatrixPtrV>& activations) {
-    const size_t sampleCount = std::min(gradients.size(), activations.size());
-    for (size_t s = 0; s < sampleCount; ++s) {
-        auto& gradSample = gradients[s];
-        const auto& actSample = activations[s];
-        const size_t channelCount = std::min(gradSample.size(), actSample.size());
-        for (size_t c = 0; c < channelCount; ++c) {
-            auto& grad = gradSample[c];
-            const auto& act = actSample[c];
-            if (!grad || !act || grad->getRowSize() != act->getRowSize() ||
-                grad->getColSize() != act->getColSize()) {
-                continue;
-            }
-            *grad = grad->elementProduct(act->applyFunction(NNFunctions::ReLUDrevative));
-        }
-    }
-}
-
-NNMatrixPtr augmentCifar32Channel(const NNMatrixPtr& in, int pad, int cropY, int cropX, bool hflip,
-                                  NNMatrixPtr& reuse) {
-    if (!in) {
-        return nullptr;
-    }
-    const int side = in->getRowSize();
-    if (side <= 0 || in->getColSize() != side) {
-        return nullptr;
-    }
-    if (pad < 0) {
-        return nullptr;
-    }
-
-    const float* inData = in->data();
-    if (!inData) {
-        return nullptr;
-    }
-
-    // Instead of constructing a padded temporary matrix, compute the crop directly.
-    // Semantics match:
-    //   padded has input placed at offset (pad,pad), zeros elsewhere
-    //   crop is taken from padded at (cropY,cropX)
-    //   optional horizontal flip is applied to the cropped patch
-    cropY = std::max(0, std::min(cropY, 2 * pad));
-    cropX = std::max(0, std::min(cropX, 2 * pad));
-
-    // Prepare reuse buffer (allocate once and reuse across calls where provided).
-    if (!reuse || reuse->getRowSize() != side || reuse->getColSize() != side) {
-        reuse = std::make_shared<NNMatrix>(side, side, 0.0f);
-    } else {
-        float* z = reuse->data();
-        if (z) {
-            const int len = side * side;
-            std::fill_n(z, len, 0.0f);
-        }
-    }
-
-    auto out = reuse;
-    float* outData = out ? out->data() : nullptr;
-    if (!outData) {
-        return nullptr;
-    }
-
-    for (int y = 0; y < side; ++y) {
-        // y in padded coordinates is (y + cropY). Convert to input coords by subtracting pad.
-        const int srcY = (y + cropY) - pad;
-        float* dstRow = outData + y * side;
-        if (srcY < 0 || srcY >= side) {
-            // Entire row is padding (already zero-initialized).
-            continue;
-        }
-
-        const float* srcBaseRow = inData + srcY * side;
-        for (int x = 0; x < side; ++x) {
-            const int px = hflip ? (side - 1 - x) : x;
-            const int srcX = (px + cropX) - pad;
-            if (srcX < 0 || srcX >= side) {
-                // Padding.
-                continue;
-            }
-            dstRow[x] = srcBaseRow[srcX];
-        }
-    }
-
-    return out;
-}
-
-NNMatrixPtrV maybeAugmentCifar32Sample(const NNMatrixPtrV& sample, int pad,
-                                       NNMatrixPtrV* reuseBuffers) {
-    if (!CIFAR100_CNN_USE_DATA_AUGMENTATION) {
-        return sample;
-    }
-    if (static_cast<int>(sample.size()) != CIFAR100_CNN_IN_CHANNELS) {
-        return sample;
-    }
-    if (!sample[0] || !sample[1] || !sample[2]) {
-        return sample;
-    }
-    if (sample[0]->getRowSize() != 32 || sample[0]->getColSize() != 32 ||
-        sample[1]->getRowSize() != 32 || sample[1]->getColSize() != 32 ||
-        sample[2]->getRowSize() != 32 || sample[2]->getColSize() != 32) {
-        return sample;
-    }
-
-    std::uniform_int_distribution<int> cropDist(0, std::max(0, 2 * pad));
-    std::bernoulli_distribution flipDist(0.5);
-
-    const int cropY = cropDist(rng());
-    const int cropX = cropDist(rng());
-    const bool hflip = flipDist(rng());
-
-    NNMatrixPtrV out;
-    out.reserve(sample.size());
-    for (size_t c = 0; c < sample.size(); ++c) {
-        NNMatrixPtr tempReuse; // used when caller doesn't provide reuse buffers
-        NNMatrixPtr& reuseRef = (reuseBuffers && reuseBuffers->size() >= sample.size())
-                                    ? (*reuseBuffers)[c]
-                                    : tempReuse;
-        auto aug = augmentCifar32Channel(sample[c], pad, cropY, cropX, hflip, reuseRef);
-        if (!aug) {
-            return sample;
-        }
-        out.push_back(std::move(aug));
-    }
-    applyCutoutInPlace(out, CIFAR100_CNN_CUTOUT_SIZE);
-    return out;
-}
-
-NNMatrixPtr flattenAndConcatReuse(const NNMatrixPtrV& mats, NNMatrixPtr& reuse) {
-    if (mats.empty()) {
-        return nullptr;
-    }
-
-    int total = 0;
-    for (const auto& m : mats) {
-        if (!m) {
-            return nullptr;
-        }
-        const int r = m->getRowSize();
-        const int c = m->getColSize();
-        if (r <= 0 || c <= 0) {
-            return nullptr;
-        }
-        total += r * c;
-    }
-    if (total <= 0) {
-        return nullptr;
-    }
-
-    if (!reuse || reuse->getRowSize() != total || reuse->getColSize() != 1) {
-        reuse = std::make_shared<NNMatrix>(total, 1);
-    }
-
-    float* out = reuse ? reuse->data() : nullptr;
-    if (!out) {
-        return nullptr;
-    }
-
-    int offset = 0;
-    for (const auto& m : mats) {
-        const float* in = m ? m->data() : nullptr;
-        const int len = m ? (m->getRowSize() * m->getColSize()) : 0;
-        if (!in || len <= 0) {
-            return nullptr;
-        }
-        std::copy(in, in + len, out + offset);
-        offset += len;
-    }
-    return reuse;
-}
-
-template <typename T> bool writeScalar(std::ostream& os, const T& value) {
-    os.write(reinterpret_cast<const char*>(&value), sizeof(T));
-    return os.good();
-}
-
-template <typename T> bool readScalar(std::istream& is, T& value) {
-    is.read(reinterpret_cast<char*>(&value), sizeof(T));
-    return is.good();
-}
-
-bool writeLayerType(std::ostream& os, NNLayerType type) {
-    const std::uint8_t v = static_cast<std::uint8_t>(type);
-    return writeScalar(os, v);
-}
-
-bool readLayerType(std::istream& is, NNLayerType& type) {
-    std::uint8_t v = 0;
-    if (!readScalar(is, v)) {
-        return false;
-    }
-    type = static_cast<NNLayerType>(v);
-    return true;
-}
-} // namespace
 
 CNN::CNN(const std::vector<CNNConfigPtr>& configs) {
     for (const auto& configPtr : configs) {
@@ -328,11 +62,8 @@ std::shared_ptr<NNLayer> CNN::buildCNNLayer(const CNNConfig& config) {
     return layerPtr;
 }
 
-NNMatrixPtrV CNN::forward(int epoc, int batchNo, int inChannelSize, const NNMatrixPtrV& X,
+NNMatrixPtrV CNN::forward(int epoch, int batchNo, int inChannelSize, const NNMatrixPtrV& X,
                           bool training, LayerCallback layerCallback) {
-    (void) epoc;
-    (void) batchNo;
-
     NNMatrixPtrV outputs;
     if (inChannelSize <= 0) {
         LOG << "CNN::forward invalid inChannelSize " << inChannelSize;
@@ -388,7 +119,7 @@ NNMatrixPtrV CNN::forward(int epoc, int batchNo, int inChannelSize, const NNMatr
         }
 
         if (layerCallback) {
-            layerCallback(epoc, batchNo, static_cast<int>(li), LayerPhase::Forward);
+            layerCallback(epoch, batchNo, static_cast<int>(li), LayerPhase::Forward);
         }
 
         switch (layer->getLayerType()) {
@@ -418,7 +149,7 @@ NNMatrixPtrV CNN::forward(int epoc, int batchNo, int inChannelSize, const NNMatr
             auto* bn = static_cast<BNLayer*>(layer.get());
             curBySample = bn->forwardBatch(curBySample, training);
             for (size_t s = 0; s < sampleCount; ++s) {
-                applyReluInPlace(curBySample[s]);
+                NNUtils::applyReluInPlace(curBySample[s]);
                 layerOutputs_[li][s] = curBySample[s];
             }
             break;
@@ -441,7 +172,7 @@ NNMatrixPtrV CNN::forward(int epoc, int batchNo, int inChannelSize, const NNMatr
                     curBySample[s][0]->getRowSize() == fc->getInputSize()) {
                     flat = curBySample[s][0];
                 } else {
-                    flat = flattenAndConcatReuse(curBySample[s], flatScratchBySample_[s]);
+                    flat = NNUtils::flattenAndConcatReuse(curBySample[s], flatScratchBySample_[s]);
                 }
                 if (!flat) {
                     curBySample[s].clear();
@@ -783,7 +514,7 @@ void CNN::backward(const NNMatrixPtrV& X, const NNMatrixPtrV& Y, float learningR
 
         if (layer->getLayerType() == NNLayerType::BatchNorm) {
             auto* bn = static_cast<BNLayer*>(layer.get());
-            gateReluGradientInPlace(dCurBySample, layerOutputs_[static_cast<size_t>(li)]);
+            NNUtils::gateReluGradientInPlace(dCurBySample, layerOutputs_[static_cast<size_t>(li)]);
             dCurBySample = bn->backwardBatch(dCurBySample);
             bn->update(learningRate, momentum);
             continue;
@@ -860,14 +591,15 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
     completedEpoch_ = 0;
     int e = 1;
     bool completedTraining = true;
-    int totalBatches = 0;
+    int handledBatchNum = 0;
     while (e <= epochNum) {
-        if (stopCallback && stopCallback()) {
+        if (stopCallback and stopCallback()) {
             completedTraining = false;
             break;
         }
-        LOG << "Epoc " << e << "/" << epochNum << ", trainData " << dataSet.trainInput_.size()
-            << ", trainLabel " << dataSet.trainLabel_.size() << std::endl;
+        LOG << "Epoch " << e << "/" << epochNum << ", training data size "
+            << dataSet.trainInput_.size() << ", training label size " << dataSet.trainLabel_.size()
+            << std::endl;
         auto& trainData = dataSet.trainInput_;
         auto& trainLabel = dataSet.trainLabel_;
 
@@ -876,7 +608,7 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
         const int inChannelSize = shuffleInfo.inChannelSize;
         const int sampleCount = shuffleInfo.sampleCount;
 
-        int numBatches = NNUtils::ceilDiv(sampleCount, batchSize);
+        int batchNum = NNUtils::ceilDiv(sampleCount, batchSize);
         float epochLoss = 0.0f;
 
         std::vector<NNMatrixPtr> batchX;
@@ -885,14 +617,15 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
                        static_cast<size_t>(std::max(1, inChannelSize)));
         batchY.reserve(static_cast<size_t>(batchSize));
 
-        for (int b = 0; b < numBatches; b++) {
+        for (int b = 0; b < batchNum; b++) {
             if (stopCallback && stopCallback()) {
                 completedTraining = false;
                 break;
             }
 
-            const float curLearningRate =
-                cosineAnnealedLearningRate(learningRate, epochNum, numBatches, totalBatches);
+            const float curLearningRate = NNUtils::cosineAnnealedLearningRate(
+                learningRate, CIFAR100_CNN_MIN_LEARNING_RATE, CIFAR100_CNN_WARMUP_EPOCHS, epochNum,
+                batchNum, handledBatchNum);
 
             const int startSample = b * batchSize;
             const int endSample = std::min(startSample + batchSize, sampleCount);
@@ -905,27 +638,27 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
                 break;
             }
 
-            const int batchSampleCount = endSample - startSample;
-            const int expectedBatchXCount = batchSampleCount * inChannelSize;
+            const int sampleCountPerBatch = endSample - startSample;
+            const int expectedBatchInputSize = sampleCountPerBatch * inChannelSize;
 
             batchX.clear();
             batchY.clear();
-            batchX.reserve(static_cast<size_t>(expectedBatchXCount));
-            batchY.reserve(static_cast<size_t>(batchSampleCount));
+            batchX.reserve(static_cast<size_t>(expectedBatchInputSize));
+            batchY.reserve(static_cast<size_t>(sampleCountPerBatch));
 
             // Ensure we have a reusable augmentation pool for this batch to avoid
             // allocating augmented channel matrices repeatedly. `augmentPool_` is
             // sized to the current batch sample count and each entry is sized to
             // `inChannelSize` (channels) with nullptr placeholders.
             if (inChannelSize == CIFAR100_CNN_IN_CHANNELS) {
-                if (augmentPool_.size() < static_cast<size_t>(batchSampleCount)) {
+                if (augmentPool_.size() < static_cast<size_t>(sampleCountPerBatch)) {
                     const size_t old = augmentPool_.size();
-                    augmentPool_.resize(static_cast<size_t>(batchSampleCount));
+                    augmentPool_.resize(static_cast<size_t>(sampleCountPerBatch));
                     for (size_t p = old; p < augmentPool_.size(); ++p) {
                         augmentPool_[p].assign(static_cast<size_t>(inChannelSize), NNMatrixPtr{});
                     }
                 } else {
-                    for (int p = 0; p < batchSampleCount; ++p) {
+                    for (int p = 0; p < sampleCountPerBatch; ++p) {
                         if (augmentPool_[static_cast<size_t>(p)].size() !=
                             static_cast<size_t>(inChannelSize)) {
                             augmentPool_[static_cast<size_t>(p)].assign(
@@ -956,9 +689,10 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
                 // CIFAR-style augmentation (only if sample looks like 32x32 RGB).
                 if (inChannelSize == CIFAR100_CNN_IN_CHANNELS) {
                     const int sampleIdx = i - startSample;
-                    sample =
-                        maybeAugmentCifar32Sample(sample, CIFAR100_CNN_AUGMENT_PAD,
-                                                  &augmentPool_[static_cast<size_t>(sampleIdx)]);
+                    sample = NNUtils::maybeAugmentCifar32Sample(
+                        CIFAR100_CNN_USE_DATA_AUGMENTATION, CIFAR100_CNN_USE_CUTOUT,
+                        CIFAR100_CNN_CUTOUT_SIZE, CIFAR100_CNN_IN_CHANNELS, sample,
+                        CIFAR100_CNN_AUGMENT_PAD, &augmentPool_[static_cast<size_t>(sampleIdx)]);
                 }
 
                 if (static_cast<int>(sample.size()) != inChannelSize) {
@@ -985,24 +719,24 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
             if (batchX.empty()) {
                 continue;
             }
-            if (static_cast<int>(batchX.size()) != expectedBatchXCount) {
+            if (static_cast<int>(batchX.size()) != expectedBatchInputSize) {
                 LOG << "CNN::train batchX incomplete: got=" << batchX.size()
-                    << ", expected=" << expectedBatchXCount << ", inChannelSize=" << inChannelSize;
+                    << ", expected=" << expectedBatchInputSize
+                    << ", inChannelSize=" << inChannelSize;
                 continue;
             }
-            if (!trainLabel.empty() && static_cast<int>(batchY.size()) != batchSampleCount) {
+            if (!trainLabel.empty() && static_cast<int>(batchY.size()) != sampleCountPerBatch) {
                 LOG << "CNN::train batchY incomplete: got=" << batchY.size()
-                    << ", expected=" << batchSampleCount;
+                    << ", expected=" << sampleCountPerBatch;
                 continue;
             }
 
             // Avoid per-batch spam; forward/backward are the hot path.
             auto preds = forward(e, b, inChannelSize, batchX, true, layerCallback);
 
-            const size_t expectedBatchXCountSz = size_t(batchSampleCount) * size_t(inChannelSize);
-            if (batchCallback && !preds.empty() && batchX.size() >= expectedBatchXCountSz) {
+            if (batchCallback && !preds.empty() && batchX.size() >= expectedBatchInputSize) {
                 int chosen = -1;
-                for (int i = 0; i < batchSampleCount; ++i) {
+                for (int i = 0; i < sampleCountPerBatch; ++i) {
                     if (preds[i]) {
                         chosen = i;
                         break;
@@ -1034,7 +768,7 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
             if (batchStatsCallback) {
                 int correct = 0;
                 int valid = 0;
-                for (int i = 0; i < batchSampleCount; ++i) {
+                for (int i = 0; i < sampleCountPerBatch; ++i) {
                     auto p = preds[i];
                     auto y = batchY[i];
                     if (!p || !y) {
@@ -1049,8 +783,7 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
                     valid > 0 ? (static_cast<float>(correct) / static_cast<float>(valid)) : 0.0f;
                 const float epochAvgLoss =
                     (b + 1) > 0 ? (epochLoss / static_cast<float>(b + 1)) : 0.0f;
-                batchStatsCallback(e, epochNum, b + 1, numBatches, batchLoss, epochAvgLoss,
-                                   batchAcc);
+                batchStatsCallback(e, epochNum, b + 1, batchNum, batchLoss, epochAvgLoss, batchAcc);
             }
 
             backward(batchX, batchY, curLearningRate, momentum, weightDecay, e, b, inChannelSize,
@@ -1058,14 +791,14 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
             if (layerCallback) {
                 layerCallback(e, b, -1, LayerPhase::Idle);
             }
-            totalBatches++;
+            handledBatchNum++;
         }
 
         if (!completedTraining) {
             break;
         }
 
-        float avgLoss = numBatches > 0 ? (epochLoss / static_cast<float>(numBatches)) : 0.0f;
+        float avgLoss = batchNum > 0 ? (epochLoss / static_cast<float>(batchNum)) : 0.0f;
         float acc = -1.0f;
 
         // With CLR, accuracy is for monitoring, not scheduling. Run it less often to speed up
@@ -1076,6 +809,12 @@ void CNN::train(NNDataset& dataSet, int epochNum, int batchSize, float learningR
                 << std::setprecision(3) << acc * 100;
         } else {
             LOG << "Epoc " << e << "/" << epochNum << ", loss " << avgLoss;
+        }
+
+        if (acc >= CNN_TRAINING_TARGET_ACC) {
+            LOG << "Target accuracy " << (CNN_TRAINING_TARGET_ACC * 100)
+                << "% reached, stopping training";
+            break;
         }
 
         if (callback) {
@@ -1179,17 +918,17 @@ bool CNN::save(const std::string& filePath) const {
     constexpr std::uint32_t kVersion = 2;
 
     os.write(kMagic, sizeof(kMagic));
-    if (!writeScalar(os, kVersion)) {
+    if (!NNStreamUtils::writeScalar(os, kVersion)) {
         return false;
     }
 
     const std::uint32_t layerCount = static_cast<std::uint32_t>(layers.size());
-    if (!writeScalar(os, layerCount)) {
+    if (!NNStreamUtils::writeScalar(os, layerCount)) {
         return false;
     }
 
     const std::int32_t completedEpoch = static_cast<std::int32_t>(completedEpoch_);
-    if (!writeScalar(os, completedEpoch)) {
+    if (!NNStreamUtils::writeScalar(os, completedEpoch)) {
         return false;
     }
 
@@ -1198,7 +937,7 @@ bool CNN::save(const std::string& filePath) const {
             return false;
         }
         const NNLayerType type = layer->getLayerType();
-        if (!writeLayerType(os, type)) {
+        if (!NNStreamUtils::writeLayerType(os, type)) {
             return false;
         }
 
@@ -1214,7 +953,8 @@ bool CNN::save(const std::string& filePath) const {
             auto* pool = static_cast<MaxPoolingLayer*>(layer.get());
             const std::int32_t filterSize = pool->getFilterSize();
             const std::int32_t stride = pool->getStride();
-            if (!writeScalar(os, filterSize) || !writeScalar(os, stride)) {
+            if (!NNStreamUtils::writeScalar(os, filterSize) ||
+                !NNStreamUtils::writeScalar(os, stride)) {
                 return false;
             }
             break;
@@ -1257,19 +997,19 @@ bool CNN::load(const std::string& filePath) {
     }
 
     std::uint32_t version = 0;
-    if (!readScalar(is, version) || (version != 1 && version != 2)) {
+    if (!NNStreamUtils::readScalar(is, version) || (version != 1 && version != 2)) {
         LOG << "CNN::load unsupported version " << version;
         return false;
     }
 
     std::uint32_t layerCount = 0;
-    if (!readScalar(is, layerCount)) {
+    if (!NNStreamUtils::readScalar(is, layerCount)) {
         return false;
     }
 
     std::int32_t completedEpoch = 0;
     if (version >= 2) {
-        if (!readScalar(is, completedEpoch)) {
+        if (!NNStreamUtils::readScalar(is, completedEpoch)) {
             return false;
         }
     }
@@ -1286,7 +1026,7 @@ bool CNN::load(const std::string& filePath) {
         }
 
         NNLayerType fileType = NNLayerType::Unknown;
-        if (!readLayerType(is, fileType)) {
+        if (!NNStreamUtils::readLayerType(is, fileType)) {
             return false;
         }
         if (fileType != layer->getLayerType()) {
@@ -1305,7 +1045,8 @@ bool CNN::load(const std::string& filePath) {
         case NNLayerType::Pooling: {
             std::int32_t filterSize = 0;
             std::int32_t stride = 0;
-            if (!readScalar(is, filterSize) || !readScalar(is, stride)) {
+            if (!NNStreamUtils::readScalar(is, filterSize) ||
+                !NNStreamUtils::readScalar(is, stride)) {
                 return false;
             }
             auto* pool = static_cast<MaxPoolingLayer*>(layer.get());

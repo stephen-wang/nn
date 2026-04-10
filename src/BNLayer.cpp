@@ -1,43 +1,11 @@
 #include "BNLayer.h"
 
+#include "NNStreamUtils.h"
 #include "nnlog/nnlog.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <istream>
-#include <ostream>
-
-namespace {
-bool writeVector(std::ostream& os, const std::vector<float>& values) {
-    const std::int32_t count = static_cast<std::int32_t>(values.size());
-    os.write(reinterpret_cast<const char*>(&count), sizeof(count));
-    if (!os.good() || count < 0) {
-        return false;
-    }
-    if (count == 0) {
-        return true;
-    }
-    os.write(reinterpret_cast<const char*>(values.data()),
-             static_cast<std::streamsize>(values.size() * sizeof(float)));
-    return os.good();
-}
-
-bool readVector(std::istream& is, std::vector<float>& values) {
-    std::int32_t count = 0;
-    is.read(reinterpret_cast<char*>(&count), sizeof(count));
-    if (!is.good() || count < 0) {
-        return false;
-    }
-    values.assign(static_cast<std::size_t>(count), 0.0f);
-    if (count == 0) {
-        return true;
-    }
-    is.read(reinterpret_cast<char*>(values.data()),
-            static_cast<std::streamsize>(values.size() * sizeof(float)));
-    return is.good();
-}
-} // namespace
 
 BNLayer::BNLayer(int channels, float eps, float runningMomentum)
     : NNLayer(NNLayerType::BatchNorm), channels_(channels), eps_(eps),
@@ -372,9 +340,10 @@ bool BNLayer::saveState(std::ostream& os) const {
         return false;
     }
 
-    return writeVector(os, gamma_) && writeVector(os, beta_) && writeVector(os, vGamma_) &&
-           writeVector(os, vBeta_) && writeVector(os, runningMean_) &&
-           writeVector(os, runningVar_) && os.good();
+    return NNStreamUtils::writeVector(os, gamma_) && NNStreamUtils::writeVector(os, beta_) &&
+           NNStreamUtils::writeVector(os, vGamma_) && NNStreamUtils::writeVector(os, vBeta_) &&
+           NNStreamUtils::writeVector(os, runningMean_) &&
+           NNStreamUtils::writeVector(os, runningVar_) && os.good();
 }
 
 bool BNLayer::loadState(std::istream& is) {
@@ -398,8 +367,9 @@ bool BNLayer::loadState(std::istream& is) {
     std::vector<float> vBeta;
     std::vector<float> runningMean;
     std::vector<float> runningVar;
-    if (!readVector(is, gamma) || !readVector(is, beta) || !readVector(is, vGamma) ||
-        !readVector(is, vBeta) || !readVector(is, runningMean) || !readVector(is, runningVar)) {
+    if (!NNStreamUtils::readVector(is, gamma) || !NNStreamUtils::readVector(is, beta) ||
+        !NNStreamUtils::readVector(is, vGamma) || !NNStreamUtils::readVector(is, vBeta) ||
+        !NNStreamUtils::readVector(is, runningMean) || !NNStreamUtils::readVector(is, runningVar)) {
         return false;
     }
 

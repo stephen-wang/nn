@@ -1,5 +1,6 @@
 #include "NNMatrix.h"
 
+#include "NNLog.h"
 #include "NNUtils.h"
 
 #include <cmath>

@@ -1,6 +1,8 @@
 #include "DNN.h"
 
 #include "NNFunctions.h"
+#include "NNLog.h"
+#include "NNStreamUtils.h"
 #include "NNUtils.h"
 
 #include <algorithm>
@@ -10,18 +12,6 @@
 #include <iomanip>
 #include <iostream>
 #include <math.h>
-
-namespace {
-template <typename T> bool writeScalar(std::ostream& os, const T& value) {
-    os.write(reinterpret_cast<const char*>(&value), sizeof(T));
-    return os.good();
-}
-
-template <typename T> bool readScalar(std::istream& is, T& value) {
-    is.read(reinterpret_cast<char*>(&value), sizeof(T));
-    return is.good();
-}
-} // namespace
 
 DNN::DNN(const std::vector<int>& config) {
     int configSize = config.size();
@@ -146,24 +136,25 @@ bool DNN::save(const std::string& filePath) const {
     constexpr std::uint32_t kVersion = 2;
 
     os.write(kMagic, sizeof(kMagic));
-    if (!writeScalar(os, kVersion)) {
+    if (!NNStreamUtils::writeScalar(os, kVersion)) {
         return false;
     }
 
     const std::uint32_t layerCount = static_cast<std::uint32_t>(layers.size());
-    if (!writeScalar(os, layerCount)) {
+    if (!NNStreamUtils::writeScalar(os, layerCount)) {
         return false;
     }
 
     const std::int32_t completedEpoch = static_cast<std::int32_t>(completedEpoch_);
-    if (!writeScalar(os, completedEpoch)) {
+    if (!NNStreamUtils::writeScalar(os, completedEpoch)) {
         return false;
     }
 
     for (const auto& layer : layers) {
         const std::int32_t inputSize = layer.getInputSize();
         const std::int32_t outputSize = layer.getOutputSize();
-        if (!writeScalar(os, inputSize) || !writeScalar(os, outputSize)) {
+        if (!NNStreamUtils::writeScalar(os, inputSize) ||
+            !NNStreamUtils::writeScalar(os, outputSize)) {
             return false;
         }
         if (!layer.saveState(os)) {
@@ -190,19 +181,19 @@ bool DNN::load(const std::string& filePath) {
     }
 
     std::uint32_t version = 0;
-    if (!readScalar(is, version) || (version != 1 && version != 2)) {
+    if (!NNStreamUtils::readScalar(is, version) || (version != 1 && version != 2)) {
         LOG << "DNN::load unsupported version " << version;
         return false;
     }
 
     std::uint32_t layerCount = 0;
-    if (!readScalar(is, layerCount)) {
+    if (!NNStreamUtils::readScalar(is, layerCount)) {
         return false;
     }
 
     std::int32_t completedEpoch = 0;
     if (version >= 2) {
-        if (!readScalar(is, completedEpoch)) {
+        if (!NNStreamUtils::readScalar(is, completedEpoch)) {
             return false;
         }
     }
@@ -214,7 +205,8 @@ bool DNN::load(const std::string& filePath) {
     for (std::size_t i = 0; i < layers.size(); ++i) {
         std::int32_t inputSize = 0;
         std::int32_t outputSize = 0;
-        if (!readScalar(is, inputSize) || !readScalar(is, outputSize)) {
+        if (!NNStreamUtils::readScalar(is, inputSize) ||
+            !NNStreamUtils::readScalar(is, outputSize)) {
             return false;
         }
 

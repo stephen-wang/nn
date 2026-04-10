@@ -1,5 +1,6 @@
 #include "MaxPoolingLayer.h"
 
+#include "NNLog.h"
 #include "NNUtils.h"
 
 #include <algorithm>

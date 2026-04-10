@@ -1,13 +1,13 @@
 #pragma once
 
+#include "NNFunctions.h"
 #include "NNMatrix.h"
 #include "nnlog/nnlog.h"
 
 #include <cassert>
 #include <cstdint>
+#include <random>
 #include <vector>
-
-#define LOG NNLOG_INFO((TAG).c_str())
 
 class NNUtils {
   private:
@@ -60,4 +60,24 @@ class NNUtils {
     static float heInit(int fanIn);
     static void normalizeMnistData(std::vector<NNMatrixPtr>& data);
     static void normalizeMnistLabel(std::vector<NNMatrixPtr>& labels);
+    static NNMatrixPtr augmentCifar32Channel(const NNMatrixPtr& in, int pad, int cropY, int cropX,
+                                             bool hflip, NNMatrixPtr& reuse);
+    inline static std::mt19937& rng() {
+        static thread_local std::mt19937 gen(std::random_device{}());
+        return gen;
+    }
+
+    static void applyReluInPlace(NNMatrixPtrV& sample);
+    static float cosineAnnealedLearningRate(float maxLearningRate, float minLearningRate,
+                                            int warmUpEpochNum, int totalEpochNum, int batchNum,
+                                            int totalBatchesSeen);
+    static void applyCutoutInPlace(bool enableCoutout, NNMatrixPtrV& sample, int cutoutSize);
+    static void gateReluGradientInPlace(std::vector<NNMatrixPtrV>& gradients,
+                                        const std::vector<NNMatrixPtrV>& activations);
+
+    static NNMatrixPtrV maybeAugmentCifar32Sample(bool enableDataAugment, bool enableCutout,
+                                                  int cutoutSize, int channelSize,
+                                                  NNMatrixPtrV& sample, int pad,
+                                                  NNMatrixPtrV* reuseBuffers);
+    static NNMatrixPtr flattenAndConcatReuse(const NNMatrixPtrV& mats, NNMatrixPtr& reuse);
 };

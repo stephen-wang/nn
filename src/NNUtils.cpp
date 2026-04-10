@@ -1,20 +1,13 @@
 #include "NNUtils.h"
 
+#include "NNLog.h"
+
 #include <algorithm>
 #include <cassert>
 #include <chrono>
-#include <cmath>
 #include <fstream>
 #include <numeric>
 #include <random>
-
-namespace {
-std::mt19937& rng() {
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    return gen;
-}
-} // namespace
 
 const std::string NNUtils::TAG = "NNUtils";
 uint32_t NNUtils::swap_endian(uint32_t val) {
@@ -51,6 +44,73 @@ void NNUtils::normalizeMnistLabel(std::vector<NNMatrixPtr>& labels) {
         auto& label = *labelPtr;
         label.toOneHot();
     }
+}
+
+NNMatrixPtr NNUtils::augmentCifar32Channel(const NNMatrixPtr& in, int pad, int cropY, int cropX,
+                                           bool hflip, NNMatrixPtr& reuse) {
+    if (!in) {
+        return nullptr;
+    }
+    const int side = in->getRowSize();
+    if (side <= 0 || in->getColSize() != side) {
+        return nullptr;
+    }
+    if (pad < 0) {
+        return nullptr;
+    }
+
+    const float* inData = in->data();
+    if (!inData) {
+        return nullptr;
+    }
+
+    // Instead of constructing a padded temporary matrix, compute the crop directly.
+    // Semantics match:
+    //   padded has input placed at offset (pad,pad), zeros elsewhere
+    //   crop is taken from padded at (cropY,cropX)
+    //   optional horizontal flip is applied to the cropped patch
+    cropY = std::max(0, std::min(cropY, 2 * pad));
+    cropX = std::max(0, std::min(cropX, 2 * pad));
+
+    // Prepare reuse buffer (allocate once and reuse across calls where provided).
+    if (!reuse || reuse->getRowSize() != side || reuse->getColSize() != side) {
+        reuse = std::make_shared<NNMatrix>(side, side, 0.0f);
+    } else {
+        float* z = reuse->data();
+        if (z) {
+            const int len = side * side;
+            std::fill_n(z, len, 0.0f);
+        }
+    }
+
+    auto out = reuse;
+    float* outData = out ? out->data() : nullptr;
+    if (!outData) {
+        return nullptr;
+    }
+
+    for (int y = 0; y < side; ++y) {
+        // y in padded coordinates is (y + cropY). Convert to input coords by subtracting pad.
+        const int srcY = (y + cropY) - pad;
+        float* dstRow = outData + y * side;
+        if (srcY < 0 || srcY >= side) {
+            // Entire row is padding (already zero-initialized).
+            continue;
+        }
+
+        const float* srcBaseRow = inData + srcY * side;
+        for (int x = 0; x < side; ++x) {
+            const int px = hflip ? (side - 1 - x) : x;
+            const int srcX = (px + cropX) - pad;
+            if (srcX < 0 || srcX >= side) {
+                // Padding.
+                continue;
+            }
+            dstRow[x] = srcBaseRow[srcX];
+        }
+    }
+
+    return out;
 }
 
 std::vector<NNMatrixPtr> NNUtils::read_mnist_data(const std::string& filePath) {
@@ -347,4 +407,178 @@ NNUtils::shuffleSamples(std::vector<NNMatrixPtr>& input, std::vector<NNMatrixPtr
     }
 
     return info;
+}
+
+void NNUtils::applyReluInPlace(NNMatrixPtrV& sample) {
+    for (auto& channel : sample) {
+        if (channel) {
+            channel->applyFunctionInplace(NNFunctions::ReLUFunc);
+        }
+    }
+}
+
+// CIFAR100_CNN_MIN_LEARNING_RATE
+//  CIFAR100_CNN_WARMUP_EPOCHS
+float NNUtils::cosineAnnealedLearningRate(float maxLearningRate, float minLearningRate,
+                                          int warmUpEpochNum, int totalEpochNum, int batchNum,
+                                          int totalBatchesSeen) {
+    if (warmUpEpochNum <= 0 || totalEpochNum <= 0 || batchNum <= 0) {
+        return maxLearningRate;
+    }
+
+    const int warmupSteps = std::max(1, warmUpEpochNum * batchNum);
+    const int totalSteps = std::max(warmupSteps + 1, totalEpochNum * batchNum);
+    const int step = std::max(0, totalBatchesSeen);
+
+    if (step < warmupSteps) {
+        const float t = static_cast<float>(step + 1) / static_cast<float>(warmupSteps);
+        return minLearningRate + (maxLearningRate - minLearningRate) * t;
+    }
+
+    constexpr float kPi = 3.14159265358979323846f;
+    const float progress = std::min(1.0f, static_cast<float>(step - warmupSteps) /
+                                              static_cast<float>(totalSteps - warmupSteps));
+    const float cosine = 0.5f * (1.0f + std::cos(kPi * progress));
+    return minLearningRate + (maxLearningRate - minLearningRate) * cosine;
+}
+
+void NNUtils::applyCutoutInPlace(bool enableCoutout, NNMatrixPtrV& sample, int cutoutSize) {
+    if (!enableCoutout || sample.empty() || cutoutSize <= 0) {
+        return;
+    }
+    if (!sample[0] || sample[0]->getRowSize() <= 0 || sample[0]->getColSize() <= 0) {
+        return;
+    }
+
+    const int height = sample[0]->getRowSize();
+    const int width = sample[0]->getColSize();
+    const int cutoutSizeLimit = std::min(height, width) / 3;
+    cutoutSize = std::min(cutoutSize, cutoutSizeLimit);
+    std::uniform_int_distribution<int> rowDist(0, std::max(0, height - 1));
+    std::uniform_int_distribution<int> colDist(0, std::max(0, width - 1));
+    const int centerY = rowDist(NNUtils::rng());
+    const int centerX = colDist(NNUtils::rng());
+    const int half = cutoutSize / 2;
+    const int y0 = std::max(0, centerY - half);
+    const int y1 = std::min(height, centerY + half + (cutoutSize % 2));
+    const int x0 = std::max(0, centerX - half);
+    const int x1 = std::min(width, centerX + half + (cutoutSize % 2));
+
+    for (auto& channel : sample) {
+        if (!channel || channel->getRowSize() != height || channel->getColSize() != width) {
+            return;
+        }
+        float* data = channel->data();
+        if (!data) {
+            return;
+        }
+        for (int y = y0; y < y1; ++y) {
+            float* row = data + y * width;
+            std::fill(row + x0, row + x1, 0.0f);
+        }
+    }
+}
+
+void NNUtils::gateReluGradientInPlace(std::vector<NNMatrixPtrV>& gradients,
+                                      const std::vector<NNMatrixPtrV>& activations) {
+    const size_t sampleCount = std::min(gradients.size(), activations.size());
+    for (size_t s = 0; s < sampleCount; ++s) {
+        auto& gradSample = gradients[s];
+        const auto& actSample = activations[s];
+        const size_t channelCount = std::min(gradSample.size(), actSample.size());
+        for (size_t c = 0; c < channelCount; ++c) {
+            auto& grad = gradSample[c];
+            const auto& act = actSample[c];
+            if (!grad || !act || !grad->hasSameDimension(*act)) {
+                continue;
+            }
+            *grad = grad->elementProduct(act->applyFunction(NNFunctions::ReLUDrevative));
+        }
+    }
+}
+
+NNMatrixPtrV NNUtils::maybeAugmentCifar32Sample(bool enableDataAugment, bool enableCutout,
+                                                int cutoutSize, int channelSize,
+                                                NNMatrixPtrV& sample, int pad,
+                                                NNMatrixPtrV* reuseBuffers) {
+    if (!enableDataAugment) {
+        return sample;
+    }
+    if (static_cast<int>(sample.size()) != channelSize) {
+        return sample;
+    }
+    if (!sample[0] || !sample[1] || !sample[2]) {
+        return sample;
+    }
+    if (sample[0]->getRowSize() != 32 || sample[0]->getColSize() != 32 ||
+        sample[1]->getRowSize() != 32 || sample[1]->getColSize() != 32 ||
+        sample[2]->getRowSize() != 32 || sample[2]->getColSize() != 32) {
+        return sample;
+    }
+
+    std::uniform_int_distribution<int> cropDist(0, std::max(0, 2 * pad));
+    std::bernoulli_distribution flipDist(0.5);
+
+    const int cropY = cropDist(NNUtils::rng());
+    const int cropX = cropDist(NNUtils::rng());
+    const bool hflip = flipDist(NNUtils::rng());
+
+    NNMatrixPtrV out;
+    out.reserve(sample.size());
+    for (size_t c = 0; c < sample.size(); ++c) {
+        NNMatrixPtr tempReuse; // used when caller doesn't provide reuse buffers
+        NNMatrixPtr& reuseRef = (reuseBuffers && reuseBuffers->size() >= sample.size())
+                                    ? (*reuseBuffers)[c]
+                                    : tempReuse;
+        auto aug = NNUtils::augmentCifar32Channel(sample[c], pad, cropY, cropX, hflip, reuseRef);
+        if (!aug) {
+            return sample;
+        }
+        out.push_back(std::move(aug));
+    }
+    NNUtils::applyCutoutInPlace(enableCutout, out, cutoutSize);
+    return out;
+}
+
+NNMatrixPtr NNUtils::flattenAndConcatReuse(const NNMatrixPtrV& mats, NNMatrixPtr& reuse) {
+    if (mats.empty()) {
+        return nullptr;
+    }
+
+    int total = 0;
+    for (const auto& m : mats) {
+        if (!m) {
+            return nullptr;
+        }
+        const int r = m->getRowSize();
+        const int c = m->getColSize();
+        if (r <= 0 || c <= 0) {
+            return nullptr;
+        }
+        total += r * c;
+    }
+    if (total <= 0) {
+        return nullptr;
+    }
+
+    if (!reuse || reuse->getRowSize() != total || reuse->getColSize() != 1) {
+        reuse = std::make_shared<NNMatrix>(total, 1);
+    }
+
+    float* out = reuse ? reuse->data() : nullptr;
+    if (!out) {
+        return nullptr;
+    }
+
+    int offset = 0;
+    for (const auto& m : mats) {
+        const float* in = m ? m->data() : nullptr;
+        const int len = m ? (m->getRowSize() * m->getColSize()) : 0;
+        if (!in || len <= 0) {
+            return nullptr;
+        }
+        std::copy(in, in + len, out + offset);
+        offset += len;
+    }
+    return reuse;
 }

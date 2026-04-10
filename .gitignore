@@ -17,3 +17,4 @@ test.bin
 train.bin
 cnn_checkpoint.bin
 dnn_checkpoint.bin
+*.dSYM

@@ -38,6 +38,9 @@ class NNMatrix : public std::enable_shared_from_this<NNMatrix> {
     NNMatrix dotProduct(const NNMatrix& other);
     NNMatrix elementProduct(const NNMatrix& other);
     NNMatrix applyFunction(const MatrixFunc& func);
+    inline bool hasSameDimension(const NNMatrix& other) const noexcept {
+        return row_ == other.row_ && col_ == other.col_;
+    }
     void applyFunctionInplace(const MatrixFunc& func);
 
     int getIndexOfColMax(int col) const;

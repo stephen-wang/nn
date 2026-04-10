@@ -1,5 +1,6 @@
 #include "ConvolutionLayer.h"
 
+#include "NNLog.h"
 #include "NNUtils.h"
 
 #include <algorithm>

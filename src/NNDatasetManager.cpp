@@ -2,6 +2,7 @@
 
 #include "CNNConfigBuilder.h"
 #include "DefaultCNNConfig.h"
+#include "NNLog.h"
 #include "NNUtils.h"
 
 #include <algorithm>

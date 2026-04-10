@@ -18,8 +18,7 @@ class NN {
 
     static float crossEntropyLoss(const NNMatrix& actual, const NNMatrix& expect) {
         // Keep behavior aligned with DNN::calculateCrossEntropyLoss.
-        if (actual.getRowSize() != expect.getRowSize() || actual.getColSize() != 1 ||
-            expect.getColSize() != 1) {
+        if (!actual.hasSameDimension(expect) || actual.getColSize() != 1) {
             return 0.0f;
         }
 

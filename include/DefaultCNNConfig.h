@@ -59,6 +59,7 @@ const int CIFAR100_CNN_CUTOUT_SIZE = 8;
 const float CIFAR100_CNN_LABEL_SMOOTHING = 0.1f;
 const int CIFAR100_CNN_WARMUP_EPOCHS = 5;
 const float CIFAR100_CNN_MIN_LEARNING_RATE = 5e-4f;
+const float CNN_TRAINING_TARGET_ACC = 0.1f;
 
 // Practical defaults: CNN training is CPU-heavy; keep the default run small to iterate faster.
 // Increase these (or set to <=0) for full-dataset training.
